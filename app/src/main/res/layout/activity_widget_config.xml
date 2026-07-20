@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="22dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="위젯 설정"
+            android:textColor="#5A3021"
+            android:textSize="27sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/button_choose_file"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:backgroundTint="#D1AE6F"
+            android:text="메모 파일 선택"
+            android:textColor="#2A1710" />
+
+        <TextView
+            android:id="@+id/text_selected_file"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="선택된 파일 없음"
+            android:textColor="#75432E"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="색상 프리셋"
+            android:textColor="#5A3021"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/spinner_color_preset"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="6dp"
+            android:backgroundTint="#75432E"
+            android:popupBackground="#120904"
+            android:spinnerMode="dropdown" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="블랙 월넛 · 다크 브라운 · 브론즈 · 골드 · 앰버 · 코퍼 중 선택한 뒤 아래 HEX 값을 다시 세부 조정할 수 있습니다."
+            android:textColor="#4A291C"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/button_preset_match"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:backgroundTint="#3A2017"
+                android:text="화면 일치"
+                android:textColor="#D1AE6F" />
+
+            <Button
+                android:id="@+id/button_preset_readable"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:backgroundTint="#75432E"
+                android:text="가독성"
+                android:textColor="#000000" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="색상값 (#RRGGBB 또는 #AARRGGBB)"
+            android:textColor="#5A3021"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/edit_background"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="배경 #000000"
+            android:inputType="textNoSuggestions"
+            android:textColor="#75432E"
+            android:textColorHint="#29150F" />
+
+        <EditText
+            android:id="@+id/edit_title_color"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="제목 #5A3021"
+            android:inputType="textNoSuggestions"
+            android:textColor="#75432E"
+            android:textColorHint="#29150F" />
+
+        <EditText
+            android:id="@+id/edit_body_color"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="본문 #3A2017"
+            android:inputType="textNoSuggestions"
+            android:textColor="#75432E"
+            android:textColorHint="#29150F" />
+
+        <EditText
+            android:id="@+id/edit_accent_color"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="강조 #D1AE6F"
+            android:inputType="textNoSuggestions"
+            android:textColor="#75432E"
+            android:textColorHint="#29150F" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="본문 글자 크기 (sp)"
+            android:textColor="#5A3021"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/edit_text_size"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="numberDecimal"
+            android:text="16"
+            android:textColor="#75432E" />
+
+        <LinearLayout
+            android:id="@+id/preview_root"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:layout_marginTop="24dp"
+            android:background="#000000"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:id="@+id/preview_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="기본함"
+                android:textColor="#5A3021"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/preview_body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="☐ 오늘 할 일\n☑ 완료한 항목\n중요 메모"
+                android:textColor="#3A2017"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/preview_accent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="◆ 강조 · 링크 · 체크 표시"
+                android:textColor="#D1AE6F"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/button_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:backgroundTint="#D1AE6F"
+            android:text="저장하고 위젯 만들기"
+            android:textColor="#2A1710" />
+    </LinearLayout>
+</ScrollView>

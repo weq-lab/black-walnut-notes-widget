@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Black Walnut Notes"
+            android:textColor="#5A3021"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingExtra="4dp"
+            android:text="선택한 Markdown 또는 텍스트 파일을 홈 화면에 표시합니다. 인터넷 권한과 전체 저장소 권한을 사용하지 않습니다."
+            android:textColor="#75432E"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/button_add_widget"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:backgroundTint="#D1AE6F"
+            android:text="홈 화면에 위젯 추가"
+            android:textColor="#2A1710" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="30dp"
+            android:text="지원 형식"
+            android:textColor="#5A3021"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:lineSpacingExtra="4dp"
+            android:text="• 제목: # 제목\n• 체크박스: - [ ] / - [x]\n• 목록: - 항목\n• 굵게: **중요**\n• 글자색: &lt;span style=&quot;color:#D1AE6F&quot;&gt;강조&lt;/span&gt;"
+            android:textColor="#75432E"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="기본 테마"
+            android:textColor="#5A3021"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:lineSpacingExtra="4dp"
+            android:text="배경 #000000\n제목 #5A3021\n본문 #3A2017\n강조 #D1AE6F"
+            android:textColor="#75432E"
+            android:textSize="15sp" />
+    </LinearLayout>
+</ScrollView>
