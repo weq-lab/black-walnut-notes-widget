@@ -17,37 +17,27 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class WidgetConfigActivity extends Activity {
     private static final int REQUEST_OPEN_DOCUMENT = 41;
-
     private int widgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private Uri selectedUri;
     private String selectedFileName = "메모";
-
+    private final List<NoteEntity> notes = new ArrayList<>();
+    private Spinner sourceSpinner;
+    private Spinner noteSpinner;
+    private Spinner presetSpinner;
+    private LinearLayout localSection;
+    private LinearLayout fileSection;
     private TextView selectedFile;
     private EditText background;
     private EditText titleColor;
     private EditText bodyColor;
     private EditText accentColor;
     private EditText textSize;
-    private LinearLayout previewRoot;
-    private TextView previewTitle;
-    private TextView previewBody;
-    private TextView previewAccent;
-    private Spinner colorPresetSpinner;
-
-    private static final PalettePreset[] COLOR_PRESETS = new PalettePreset[]{
-            new PalettePreset("직접 입력 / 기존 값", null, null, null, null),
-            new PalettePreset("블랙 월넛", "#000000", "#5A3021", "#3A2017", "#D1AE6F"),
-            new PalettePreset("다크 브라운", "#000000", "#6B351C", "#4A2414", "#9A5835"),
-            new PalettePreset("스틸 브론즈", "#000000", "#8C5A32", "#5A351F", "#B77A45"),
-            new PalettePreset("스틸 골드", "#000000", "#A8864B", "#6A532F", "#D4B06A"),
-            new PalettePreset("앰버", "#000000", "#A85D1A", "#6F3B12", "#E49A3A"),
-            new PalettePreset("번트 코퍼", "#000000", "#9C4F2E", "#5E2E1C", "#C76D3E"),
-            new PalettePreset("골드 가독성", "#000000", "#D0A95B", "#9A7B3E", "#F0C86E")
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,38 +45,46 @@ public class WidgetConfigActivity extends Activity {
         setResult(RESULT_CANCELED);
         setContentView(R.layout.activity_widget_config);
         widgetId = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
-        if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
-            finish();
-            return;
-        }
+        if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return; }
         bindViews();
+        setupSpinners();
         loadExisting();
-        setupPresetSpinner();
+        loadNotes();
         findViewById(R.id.button_choose_file).setOnClickListener(v -> chooseFile());
-        findViewById(R.id.button_preset_match).setOnClickListener(v -> applyMatchPreset());
-        findViewById(R.id.button_preset_readable).setOnClickListener(v -> applyReadablePreset());
         findViewById(R.id.button_save).setOnClickListener(v -> saveAndFinish());
-        View.OnFocusChangeListener previewUpdater = (v, hasFocus) -> { if (!hasFocus) updatePreview(); };
-        background.setOnFocusChangeListener(previewUpdater);
-        titleColor.setOnFocusChangeListener(previewUpdater);
-        bodyColor.setOnFocusChangeListener(previewUpdater);
-        accentColor.setOnFocusChangeListener(previewUpdater);
-        textSize.setOnFocusChangeListener(previewUpdater);
-        updatePreview();
     }
 
     private void bindViews() {
+        sourceSpinner = findViewById(R.id.spinner_widget_source);
+        noteSpinner = findViewById(R.id.spinner_widget_note);
+        presetSpinner = findViewById(R.id.spinner_color_preset);
+        localSection = findViewById(R.id.local_note_section);
+        fileSection = findViewById(R.id.file_note_section);
         selectedFile = findViewById(R.id.text_selected_file);
         background = findViewById(R.id.edit_background);
         titleColor = findViewById(R.id.edit_title_color);
         bodyColor = findViewById(R.id.edit_body_color);
         accentColor = findViewById(R.id.edit_accent_color);
         textSize = findViewById(R.id.edit_text_size);
-        previewRoot = findViewById(R.id.preview_root);
-        previewTitle = findViewById(R.id.preview_title);
-        previewBody = findViewById(R.id.preview_body);
-        previewAccent = findViewById(R.id.preview_accent);
-        colorPresetSpinner = findViewById(R.id.spinner_color_preset);
+    }
+
+    private void setupSpinners() {
+        sourceSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"앱 내부 로컬 노트", "TXT / Markdown 파일"}));
+        sourceSpinner.setOnItemSelectedListener(new SimpleItemSelectedListener(this::updateSourceVisibility));
+        presetSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ColorPresets.names()));
+        presetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                ColorPresets.Preset preset = ColorPresets.ALL.get(position);
+                if (preset.background != null) {
+                    background.setText(preset.background);
+                    titleColor.setText(preset.title);
+                    bodyColor.setText(preset.body);
+                    accentColor.setText(preset.accent);
+                }
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
     }
 
     private void loadExisting() {
@@ -99,30 +97,31 @@ public class WidgetConfigActivity extends Activity {
         bodyColor.setText(WidgetPrefs.body(this, widgetId));
         accentColor.setText(WidgetPrefs.accent(this, widgetId));
         textSize.setText(String.format(Locale.US, "%.0f", WidgetPrefs.textSize(this, widgetId)));
+        sourceSpinner.setSelection(WidgetPrefs.SOURCE_FILE.equals(WidgetPrefs.source(this, widgetId)) ? 1 : 0);
+        String presetName = WidgetPrefs.preset(this, widgetId);
+        for (int i = 0; i < ColorPresets.ALL.size(); i++) if (ColorPresets.ALL.get(i).name.equals(presetName)) presetSpinner.setSelection(i);
+        updateSourceVisibility();
     }
 
-    private void setupPresetSpinner() {
-        String[] labels = new String[COLOR_PRESETS.length];
-        for (int i = 0; i < COLOR_PRESETS.length; i++) labels[i] = COLOR_PRESETS[i].label;
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        colorPresetSpinner.setAdapter(adapter);
-        colorPresetSpinner.setSelection(0, false);
-        colorPresetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (position > 0) applyPreset(COLOR_PRESETS[position]);
-            }
-            @Override public void onNothingSelected(AdapterView<?> parent) { }
+    private void loadNotes() {
+        AppDatabase.IO.execute(() -> {
+            List<NoteEntity> loaded = AppDatabase.get(this).noteDao().listNotes();
+            runOnUiThread(() -> {
+                notes.clear();
+                notes.addAll(loaded);
+                List<String> labels = new ArrayList<>();
+                for (NoteEntity note : notes) labels.add(note.title.trim().isEmpty() ? "제목 없음" : note.title);
+                noteSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, labels));
+                long saved = WidgetPrefs.noteId(this, widgetId);
+                for (int i = 0; i < notes.size(); i++) if (notes.get(i).id == saved) noteSpinner.setSelection(i);
+            });
         });
     }
 
-    private void applyPreset(PalettePreset preset) {
-        if (preset.background == null) return;
-        background.setText(preset.background);
-        titleColor.setText(preset.title);
-        bodyColor.setText(preset.body);
-        accentColor.setText(preset.accent);
-        updatePreview();
+    private void updateSourceVisibility() {
+        boolean local = sourceSpinner.getSelectedItemPosition() == 0;
+        localSection.setVisibility(local ? View.VISIBLE : View.GONE);
+        fileSection.setVisibility(local ? View.GONE : View.VISIBLE);
     }
 
     private void chooseFile() {
@@ -139,9 +138,8 @@ public class WidgetConfigActivity extends Activity {
         if (requestCode != REQUEST_OPEN_DOCUMENT || resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         int flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-        try {
-            getContentResolver().takePersistableUriPermission(uri, flags);
-        } catch (SecurityException error) {
+        try { getContentResolver().takePersistableUriPermission(uri, flags); }
+        catch (SecurityException error) {
             Toast.makeText(this, "이 문서 제공자는 영구 접근 권한을 지원하지 않습니다.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -157,39 +155,10 @@ public class WidgetConfigActivity extends Activity {
                 if (index >= 0) return cursor.getString(index);
             }
         } catch (Exception ignored) { }
-        String last = uri.getLastPathSegment();
-        return last == null ? "메모" : last;
-    }
-
-    private void applyMatchPreset() { applyPreset(COLOR_PRESETS[1]); colorPresetSpinner.setSelection(1); }
-
-    private void applyReadablePreset() {
-        background.setText(WidgetPrefs.DEFAULT_BACKGROUND);
-        titleColor.setText("#945D3D");
-        bodyColor.setText(WidgetPrefs.READABLE_BODY);
-        accentColor.setText("#D8B977");
-        updatePreview();
-    }
-
-    private void updatePreview() {
-        previewRoot.setBackgroundColor(parseOr(background, Color.BLACK));
-        previewTitle.setTextColor(parseOr(titleColor, Color.rgb(90, 48, 33)));
-        previewBody.setTextColor(parseOr(bodyColor, Color.rgb(58, 32, 23)));
-        previewAccent.setTextColor(parseOr(accentColor, Color.rgb(209, 174, 111)));
-        try { previewBody.setTextSize(Float.parseFloat(textSize.getText().toString().trim())); }
-        catch (Exception ignored) { previewBody.setTextSize(WidgetPrefs.DEFAULT_TEXT_SIZE); }
-    }
-
-    private int parseOr(EditText field, int fallback) {
-        try { return Color.parseColor(normalizeColor(field.getText().toString())); }
-        catch (Exception ignored) { return fallback; }
+        return uri.getLastPathSegment() == null ? "메모" : uri.getLastPathSegment();
     }
 
     private void saveAndFinish() {
-        if (selectedUri == null) {
-            Toast.makeText(this, "먼저 메모 파일을 선택하세요.", Toast.LENGTH_SHORT).show();
-            return;
-        }
         String bg = validateColor(background, "배경색");
         String title = validateColor(titleColor, "제목색");
         String body = validateColor(bodyColor, "본문색");
@@ -199,32 +168,25 @@ public class WidgetConfigActivity extends Activity {
         try {
             size = Float.parseFloat(textSize.getText().toString().trim());
             if (size < 10f || size > 30f) throw new NumberFormatException();
-        } catch (NumberFormatException error) {
-            textSize.setError("10~30 사이 숫자를 입력하세요.");
-            return;
+        } catch (NumberFormatException error) { textSize.setError("10~30 사이 숫자를 입력하세요."); return; }
+        String preset = ColorPresets.ALL.get(presetSpinner.getSelectedItemPosition()).name;
+        if (sourceSpinner.getSelectedItemPosition() == 0) {
+            if (notes.isEmpty()) { Toast.makeText(this, "앱에서 먼저 노트를 만들어 주세요.", Toast.LENGTH_SHORT).show(); return; }
+            long noteId = notes.get(noteSpinner.getSelectedItemPosition()).id;
+            WidgetPrefs.saveLocal(this, widgetId, noteId, preset, bg, title, body, accent, size);
+        } else {
+            if (selectedUri == null) { Toast.makeText(this, "메모 파일을 선택하세요.", Toast.LENGTH_SHORT).show(); return; }
+            WidgetPrefs.saveFile(this, widgetId, selectedUri.toString(), selectedFileName, preset, bg, title, body, accent, size);
         }
-        WidgetPrefs.save(this, widgetId, selectedUri.toString(), selectedFileName, bg, title, body, accent, size);
-        AppWidgetManager manager = AppWidgetManager.getInstance(this);
-        NoteWidgetProvider.updateWidget(this, manager, widgetId);
+        NoteWidgetProvider.updateWidget(this, AppWidgetManager.getInstance(this), widgetId);
         setResult(RESULT_OK, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId));
         finish();
     }
 
     private String validateColor(EditText field, String label) {
-        String value = normalizeColor(field.getText().toString());
+        String value = field.getText().toString().trim().toUpperCase(Locale.US);
+        if (!value.startsWith("#")) value = "#" + value;
         try { Color.parseColor(value); return value; }
-        catch (Exception error) { field.setError(label + "은 #RRGGBB 또는 #AARRGGBB 형식이어야 합니다."); return null; }
-    }
-
-    private String normalizeColor(String value) {
-        String result = value == null ? "" : value.trim().toUpperCase(Locale.US);
-        return result.startsWith("#") ? result : "#" + result;
-    }
-
-    private static final class PalettePreset {
-        final String label, background, title, body, accent;
-        PalettePreset(String label, String background, String title, String body, String accent) {
-            this.label = label; this.background = background; this.title = title; this.body = body; this.accent = accent;
-        }
+        catch (Exception error) { field.setError(label + "은 #RRGGBB 형식이어야 합니다."); return null; }
     }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+    <CheckBox android:id="@+id/check_item_box" android:layout_width="wrap_content" android:layout_height="48dp" android:buttonTint="#D1AE6F" />
+    <EditText android:id="@+id/check_item_text" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:backgroundTint="#3A2017" android:hint="항목" android:inputType="textCapSentences" android:maxLines="3" android:textColor="#75432E" android:textColorHint="#29150F" />
+    <Button android:id="@+id/button_remove_check_item" android:layout_width="48dp" android:layout_height="48dp" android:backgroundTint="#000000" android:contentDescription="항목 삭제" android:text="×" android:textColor="#9C4F2E" android:textSize="20sp" />
+</LinearLayout>
