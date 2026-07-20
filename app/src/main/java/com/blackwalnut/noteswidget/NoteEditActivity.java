@@ -65,6 +65,7 @@ public class NoteEditActivity extends Activity {
             NoteEntity created = new NoteEntity();
             created.createdAt = now;
             created.updatedAt = now;
+            FirestoreSyncManager.prepareNewNote(this, created);
             created.id = AppDatabase.get(this).noteDao().insertNote(created);
             runOnUiThread(() -> showNote(created, new ArrayList<>()));
         });
@@ -151,10 +152,12 @@ public class NoteEditActivity extends Activity {
         note.body = nextBody;
         note.colorPreset = nextPreset;
         note.updatedAt = System.currentTimeMillis();
+        FirestoreSyncManager.prepareLocalEdit(this, note);
         AppDatabase.IO.execute(() -> {
             NoteDao dao = AppDatabase.get(this).noteDao();
             dao.updateNote(note);
             dao.replaceItems(noteId, items);
+            FirestoreSyncManager.kick(this);
             NoteWidgetProvider.notifyAllWidgets(this);
             runOnUiThread(() -> status.setText("저장됨"));
         });
@@ -169,7 +172,8 @@ public class NoteEditActivity extends Activity {
                     deleting = true;
                     handler.removeCallbacks(autoSave);
                     AppDatabase.IO.execute(() -> {
-                        AppDatabase.get(this).noteDao().deleteNote(note);
+                        AppDatabase.get(this).noteDao().deleteForSync(note);
+                        FirestoreSyncManager.kick(this);
                         NoteWidgetProvider.notifyAllWidgets(this);
                         runOnUiThread(this::finish);
                     });

@@ -5,3 +5,7 @@ local.properties
 *.iml
 *.jks
 *.keystore
+google-services.json
+**/google-services.json
+.firebaserc
+firebase-debug.log

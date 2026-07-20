@@ -40,6 +40,52 @@
             android:textColor="#D1AE6F" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/sync_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="로컬 전용 모드"
+        android:textColor="#75432E"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/button_sign_in"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:backgroundTint="#D1AE6F"
+            android:text="Google로 로그인"
+            android:textColor="#201008" />
+
+        <Button
+            android:id="@+id/button_import_notes"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="#5A3021"
+            android:text="로컬 노트 가져오기"
+            android:textColor="#D1AE6F"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/button_sign_out"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#3A2017"
+            android:text="로그아웃"
+            android:textColor="#D1AE6F"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <ListView
         android:id="@+id/note_list"
         android:layout_width="match_parent"

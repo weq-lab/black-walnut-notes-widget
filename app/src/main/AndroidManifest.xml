@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Intentionally no INTERNET permission and no broad storage permission. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Intentionally no broad storage permission. -->
 
     <application
         android:allowBackup="false"

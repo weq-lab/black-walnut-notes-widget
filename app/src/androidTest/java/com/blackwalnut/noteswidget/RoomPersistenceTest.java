@@ -44,6 +44,7 @@ public class RoomPersistenceTest {
         NoteWithItems stored = database.noteDao().getNoteWithItems(note.id);
         assertEquals("장보기", stored.note.title);
         assertEquals("호두", stored.items.get(0).text);
+        assertEquals("", stored.note.cloudId);
         database.noteDao().toggleItemAndTouch(stored.items.get(0).id, note.id, 2);
         assertTrue(database.noteDao().getItems(note.id).get(0).checked);
     }

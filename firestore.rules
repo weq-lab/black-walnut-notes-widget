@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ownsUserPath(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validNote(noteId) {
+      return request.resource.data.keys().hasOnly([
+          'noteId', 'title', 'body', 'checklist', 'createdAt',
+          'updatedAt', 'colorPreset', 'schemaVersion'
+        ])
+        && request.resource.data.noteId == noteId
+        && request.resource.data.title is string
+        && request.resource.data.body is string
+        && request.resource.data.checklist is list
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int
+        && request.resource.data.colorPreset is string
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    match /users/{uid}/notes/{noteId} {
+      allow read, delete: if ownsUserPath(uid);
+      allow create, update: if ownsUserPath(uid) && validNote(noteId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

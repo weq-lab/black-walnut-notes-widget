@@ -45,6 +45,7 @@ public class NoteWidgetProvider extends AppWidgetProvider {
                 PendingResult pending = goAsync();
                 AppDatabase.IO.execute(() -> {
                     AppDatabase.get(context).noteDao().toggleItemAndTouch(itemId, noteId, System.currentTimeMillis());
+                    FirestoreSyncManager.kick(context);
                     refresh(context, widgetId);
                     pending.finish();
                 });
