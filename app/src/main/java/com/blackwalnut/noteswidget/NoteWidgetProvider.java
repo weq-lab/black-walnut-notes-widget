@@ -107,8 +107,8 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     private static void setOpenFileIntent(Context context, RemoteViews views, int widgetId, Uri uri) {
         Intent view = new Intent(Intent.ACTION_VIEW)
                 .setDataAndType(uri, "text/plain")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                .setClipData(ClipData.newRawUri("note", uri));
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        view.setClipData(ClipData.newRawUri("note", uri));
         Intent chooser = Intent.createChooser(view, "메모 앱으로 열기");
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pending = PendingIntent.getActivity(
