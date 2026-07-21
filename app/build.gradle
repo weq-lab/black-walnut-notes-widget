@@ -44,8 +44,8 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.room:room-runtime:2.6.1'
-    annotationProcessor 'androidx.room:room-compiler:2.6.1'
+    implementation 'androidx.room:room-runtime:2.8.4'
+    annotationProcessor 'androidx.room:room-compiler:2.8.4'
 
     implementation platform('com.google.firebase:firebase-bom:34.16.0')
     implementation 'com.google.firebase:firebase-auth'
@@ -61,6 +61,6 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test:rules:1.6.1'
-    androidTestImplementation 'androidx.room:room-testing:2.6.1'
+    androidTestImplementation 'androidx.room:room-testing:2.8.4'
     androidTestImplementation 'junit:junit:4.13.2'
 }
