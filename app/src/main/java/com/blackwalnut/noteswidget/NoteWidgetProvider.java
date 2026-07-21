@@ -12,6 +12,11 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.widget.RemoteViews;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+
 public class NoteWidgetProvider extends AppWidgetProvider {
     static final String ACTION_REFRESH = "com.blackwalnut.noteswidget.ACTION_REFRESH";
     static final String ACTION_TOGGLE_ITEM = "com.blackwalnut.noteswidget.ACTION_TOGGLE_ITEM";
@@ -20,6 +25,8 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     static final String EXTRA_WIDGET_ID = "widget_id";
     static final String EXTRA_NOTE_ID = "note_id";
     static final String EXTRA_ITEM_ID = "item_id";
+    private static final String UNTITLED = "제목 없음";
+    private static final String FILE_UNAVAILABLE = "파일을 열 수 없음";
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] appWidgetIds) {
@@ -67,8 +74,19 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     }
 
     static void updateWidget(Context context, AppWidgetManager manager, int widgetId) {
+        String initialTitle = WidgetPrefs.SOURCE_FILE.equals(WidgetPrefs.source(context, widgetId))
+                ? displayTitle(WidgetPrefs.fileName(context, widgetId), UNTITLED)
+                : UNTITLED;
+        RemoteViews views = createRemoteViews(context, widgetId, initialTitle);
+        manager.updateAppWidget(widgetId, views);
+        manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list);
+        loadHeaderTitle(context, widgetId);
+    }
+
+    private static RemoteViews createRemoteViews(Context context, int widgetId, String headerTitle) {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_note);
         views.setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.parseColor(WidgetPrefs.background(context, widgetId)));
+        views.setTextViewText(R.id.widget_header_title, headerTitle);
         views.setTextColor(R.id.widget_header_title, android.graphics.Color.parseColor(WidgetPrefs.title(context, widgetId)));
         Intent service = new Intent(context, NoteWidgetService.class)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
@@ -85,8 +103,72 @@ public class NoteWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_refresh, refreshIntent(context, widgetId));
         views.setOnClickPendingIntent(R.id.widget_new, newNoteIntent(context, widgetId));
         views.setOnClickPendingIntent(R.id.widget_settings, configIntent(context, widgetId));
-        manager.updateAppWidget(widgetId, views);
-        manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list);
+        views.setOnClickPendingIntent(R.id.widget_header_title, headerIntent(context, widgetId));
+        return views;
+    }
+
+    private static void loadHeaderTitle(Context context, int widgetId) {
+        Context appContext = context.getApplicationContext();
+        String source = WidgetPrefs.source(appContext, widgetId);
+        long noteId = WidgetPrefs.noteId(appContext, widgetId);
+        String uriText = WidgetPrefs.uri(appContext, widgetId);
+        AppDatabase.IO.execute(() -> {
+            String title;
+            if (WidgetPrefs.SOURCE_FILE.equals(source)) {
+                title = readFileTitle(appContext, widgetId, uriText);
+            } else {
+                NoteEntity note = noteId > 0 ? AppDatabase.get(appContext).noteDao().getNote(noteId) : null;
+                title = note == null ? UNTITLED : displayTitle(note.title, UNTITLED);
+            }
+            if (!selectionMatches(appContext, widgetId, source, noteId, uriText)) return;
+            AppWidgetManager manager = AppWidgetManager.getInstance(appContext);
+            manager.updateAppWidget(widgetId, createRemoteViews(appContext, widgetId, title));
+        });
+    }
+
+    private static String readFileTitle(Context context, int widgetId, String uriText) {
+        if (uriText == null) return FILE_UNAVAILABLE;
+        try (InputStream input = context.getContentResolver().openInputStream(Uri.parse(uriText))) {
+            if (input == null) return FILE_UNAVAILABLE;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                StringBuilder raw = new StringBuilder();
+                char[] buffer = new char[4096];
+                int count;
+                while ((count = reader.read(buffer)) != -1 && raw.length() < 200000) {
+                    raw.append(buffer, 0, count);
+                }
+                int accent = parseColor(WidgetPrefs.accent(context, widgetId), android.graphics.Color.rgb(209, 174, 111));
+                MarkdownRenderer.RenderedNote rendered = MarkdownRenderer.render(
+                        raw.toString(), WidgetPrefs.fileName(context, widgetId), accent
+                );
+                return displayTitle(rendered.title, WidgetPrefs.fileName(context, widgetId));
+            }
+        } catch (Exception ignored) {
+            return FILE_UNAVAILABLE;
+        }
+    }
+
+    private static boolean selectionMatches(Context context, int widgetId, String source, long noteId, String uriText) {
+        if (!source.equals(WidgetPrefs.source(context, widgetId))) return false;
+        if (WidgetPrefs.SOURCE_FILE.equals(source)) {
+            String currentUri = WidgetPrefs.uri(context, widgetId);
+            return uriText == null ? currentUri == null : uriText.equals(currentUri);
+        }
+        return noteId == WidgetPrefs.noteId(context, widgetId);
+    }
+
+    private static String displayTitle(String value, String fallback) {
+        if (value != null && !value.trim().isEmpty()) return value.trim();
+        if (fallback != null && !fallback.trim().isEmpty()) return fallback.trim();
+        return UNTITLED;
+    }
+
+    private static int parseColor(String value, int fallback) {
+        try {
+            return android.graphics.Color.parseColor(value);
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     static void notifyAllWidgets(Context context) {
@@ -124,6 +206,28 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     private static PendingIntent newNoteIntent(Context context, int widgetId) {
         Intent intent = new Intent(context, NoteEditActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(context, 20000 + widgetId, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static PendingIntent headerIntent(Context context, int widgetId) {
+        if (!WidgetPrefs.SOURCE_FILE.equals(WidgetPrefs.source(context, widgetId))) {
+            long noteId = WidgetPrefs.noteId(context, widgetId);
+            if (noteId <= 0) return newNoteIntent(context, widgetId);
+            Intent openNote = new Intent(context, NoteWidgetProvider.class)
+                    .setAction(ACTION_OPEN_NOTE)
+                    .putExtra(EXTRA_WIDGET_ID, widgetId)
+                    .putExtra(EXTRA_NOTE_ID, noteId);
+            return PendingIntent.getBroadcast(
+                    context, 50000 + widgetId, openNote,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+        }
+        Intent openFile = new Intent(context, NoteWidgetProvider.class)
+                .setAction(ACTION_OPEN_FILE)
+                .putExtra(EXTRA_WIDGET_ID, widgetId);
+        return PendingIntent.getBroadcast(
+                context, 50000 + widgetId, openFile,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
     }
 
     private static PendingIntent configIntent(Context context, int widgetId) {

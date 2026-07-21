@@ -22,9 +22,8 @@ public class NoteWidgetService extends RemoteViewsService {
     }
 
     private static final class Row {
-        static final int TITLE = 0;
-        static final int BODY = 1;
-        static final int CHECK = 2;
+        static final int BODY = 0;
+        static final int CHECK = 1;
         final int type;
         final String text;
         final long noteId;
@@ -40,7 +39,6 @@ public class NoteWidgetService extends RemoteViewsService {
         private final int widgetId;
         private final List<Row> rows = new ArrayList<>();
         private int background;
-        private int titleColor;
         private int bodyColor;
         private int accentColor;
 
@@ -51,7 +49,6 @@ public class NoteWidgetService extends RemoteViewsService {
         public void onDataSetChanged() {
             rows.clear();
             background = parse(WidgetPrefs.background(context, widgetId), Color.BLACK);
-            titleColor = parse(WidgetPrefs.title(context, widgetId), Color.rgb(90, 48, 33));
             bodyColor = parse(WidgetPrefs.body(context, widgetId), Color.rgb(58, 32, 23));
             accentColor = parse(WidgetPrefs.accent(context, widgetId), Color.rgb(209, 174, 111));
             if (WidgetPrefs.SOURCE_FILE.equals(WidgetPrefs.source(context, widgetId))) loadFile(); else loadLocal();
@@ -61,7 +58,6 @@ public class NoteWidgetService extends RemoteViewsService {
             long noteId = WidgetPrefs.noteId(context, widgetId);
             NoteWithItems data = noteId > 0 ? AppDatabase.get(context).noteDao().getNoteWithItems(noteId) : null;
             if (data == null || data.note == null) return;
-            rows.add(new Row(Row.TITLE, data.note.title.trim().isEmpty() ? "제목 없음" : data.note.title, noteId, 0, false));
             if (!data.note.body.trim().isEmpty()) rows.add(new Row(Row.BODY, data.note.body, noteId, 0, false));
             for (ChecklistItemEntity item : data.items) rows.add(new Row(Row.CHECK, item.text, noteId, item.id, item.checked));
         }
@@ -76,11 +72,9 @@ public class NoteWidgetService extends RemoteViewsService {
                 int count;
                 while ((count = reader.read(buffer)) != -1 && raw.length() < 200000) raw.append(buffer, 0, count);
                 MarkdownRenderer.RenderedNote rendered = MarkdownRenderer.render(raw.toString(), WidgetPrefs.fileName(context, widgetId), accentColor);
-                rows.add(new Row(Row.TITLE, rendered.title, 0, 0, false));
                 String[] lines = rendered.body.toString().split("\\n");
                 for (int i = 0; i < lines.length && i < 100; i++) if (!lines[i].trim().isEmpty()) rows.add(new Row(Row.BODY, lines[i], 0, 0, false));
             } catch (Exception error) {
-                rows.add(new Row(Row.TITLE, "파일을 열 수 없음", 0, 0, false));
                 rows.add(new Row(Row.BODY, "위젯 설정에서 파일을 다시 선택하세요.", 0, 0, false));
             }
         }
@@ -96,9 +90,12 @@ public class NoteWidgetService extends RemoteViewsService {
             views.setInt(R.id.widget_row_root, "setBackgroundColor", background);
             String text = row.type == Row.CHECK ? (row.checked ? "☑  " : "☐  ") + row.text : row.text;
             views.setTextViewText(R.id.widget_row_text, text);
-            views.setTextColor(R.id.widget_row_text, row.type == Row.TITLE ? titleColor : row.type == Row.CHECK ? accentColor : bodyColor);
-            views.setTextViewTextSize(R.id.widget_row_text, android.util.TypedValue.COMPLEX_UNIT_SP,
-                    row.type == Row.TITLE ? 19f : WidgetPrefs.textSize(context, widgetId));
+            views.setTextColor(R.id.widget_row_text, row.type == Row.CHECK ? accentColor : bodyColor);
+            views.setTextViewTextSize(
+                    R.id.widget_row_text,
+                    android.util.TypedValue.COMPLEX_UNIT_SP,
+                    WidgetPrefs.textSize(context, widgetId)
+            );
             Intent fill = new Intent();
             fill.putExtra(NoteWidgetProvider.EXTRA_WIDGET_ID, widgetId);
             if (WidgetPrefs.SOURCE_FILE.equals(WidgetPrefs.source(context, widgetId))) {
