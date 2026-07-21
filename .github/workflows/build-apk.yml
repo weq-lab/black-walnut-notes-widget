@@ -9,6 +9,37 @@ permissions:
   contents: read
 
 jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Lint Windows PWA
+        run: npm run lint
+
+      - name: Test Windows PWA
+        run: npm run test
+
+      - name: Build Windows PWA
+        run: npm run build
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
   build:
     runs-on: ubuntu-latest
     steps:

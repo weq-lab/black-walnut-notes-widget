@@ -1,6 +1,7 @@
 package com.blackwalnut.noteswidget;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -9,7 +10,10 @@ import com.google.firebase.firestore.DocumentChange;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
+import com.google.firebase.firestore.Query;
 import com.google.firebase.firestore.QuerySnapshot;
+import com.google.firebase.firestore.Source;
+import com.google.android.gms.tasks.Tasks;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -22,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 final class FirestoreSyncManager {
     interface Listener {
@@ -30,6 +35,11 @@ final class FirestoreSyncManager {
     }
 
     interface ImportCallback { void onComplete(int count); }
+
+    private static final String SYNC_PREFS = "black_walnut_background_sync";
+    private static final String LAST_SUCCESS = "last_success";
+    private static final String LAST_FULL = "last_full";
+    private static final Object PULL_LOCK = new Object();
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static ListenerRegistration registration;
@@ -100,6 +110,41 @@ final class FirestoreSyncManager {
         flushPending(user.getUid());
     }
 
+    static void pullOnce(Context context, Runnable completion) {
+        FirebaseUser user = FirebaseAuthController.currentUser(context);
+        if (user == null) {
+            completion.run();
+            return;
+        }
+        appContext = context.getApplicationContext();
+        AppDatabase.IO.execute(() -> {
+            performServerPull(appContext, user.getUid(), true, 0L);
+            MAIN.post(completion);
+        });
+    }
+
+    static boolean performPeriodicSync(Context context) {
+        FirebaseUser user = FirebaseAuthController.currentUser(context);
+        if (user == null) return true;
+        appContext = context.getApplicationContext();
+        SharedPreferences prefs = appContext.getSharedPreferences(SYNC_PREFS, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        long lastSuccess = prefs.getLong(LAST_SUCCESS, 0L);
+        boolean full = BackgroundSyncPolicy.shouldReconcileAll(now, prefs.getLong(LAST_FULL, 0L));
+        boolean success = performServerPull(
+                appContext,
+                user.getUid(),
+                full,
+                BackgroundSyncPolicy.incrementalStart(lastSuccess)
+        );
+        if (success) {
+            SharedPreferences.Editor editor = prefs.edit().putLong(LAST_SUCCESS, now);
+            if (full) editor.putLong(LAST_FULL, now);
+            editor.apply();
+        }
+        return success;
+    }
+
     static void importLocalNotes(Context context, ImportCallback callback) {
         FirebaseUser user = FirebaseAuthController.currentUser(context);
         if (user == null) {
@@ -131,6 +176,17 @@ final class FirestoreSyncManager {
 
     private static void uploadNote(String uid, NoteEntity note, List<ChecklistItemEntity> items) {
         if (note.cloudId.isEmpty()) return;
+        Map<String, Object> data = serializeNote(note, items);
+        long uploadedVersion = note.updatedAt;
+        notes(uid).document(note.cloudId).set(data)
+                .addOnSuccessListener(unused -> AppDatabase.IO.execute(() -> {
+                    AppDatabase.get(appContext).noteDao().markSynced(note.id, uploadedVersion);
+                    status("동기화 완료");
+                }))
+                .addOnFailureListener(error -> status("오프라인 변경 보관 중 · 연결되면 재시도"));
+    }
+
+    private static Map<String, Object> serializeNote(NoteEntity note, List<ChecklistItemEntity> items) {
         Map<String, Object> data = new HashMap<>();
         data.put("noteId", note.cloudId);
         data.put("title", note.title);
@@ -148,13 +204,80 @@ final class FirestoreSyncManager {
             checklist.add(row);
         }
         data.put("checklist", checklist);
-        long uploadedVersion = note.updatedAt;
-        notes(uid).document(note.cloudId).set(data)
-                .addOnSuccessListener(unused -> AppDatabase.IO.execute(() -> {
-                    AppDatabase.get(appContext).noteDao().markSynced(note.id, uploadedVersion);
-                    status("동기화 완료");
-                }))
-                .addOnFailureListener(error -> status("오프라인 변경 보관 중 · 연결되면 재시도"));
+        return data;
+    }
+
+    private static boolean performServerPull(Context context, String uid, boolean full, long incrementalStart) {
+        synchronized (PULL_LOCK) {
+            try {
+                Query query = full ? notes(uid) : notes(uid).whereGreaterThanOrEqualTo("updatedAt", incrementalStart);
+                QuerySnapshot snapshot = Tasks.await(query.get(Source.SERVER), 30, TimeUnit.SECONDS);
+                NoteDao dao = AppDatabase.get(context).noteDao();
+                for (DocumentSnapshot document : snapshot.getDocuments()) {
+                    applyPulledDocument(uid, document, dao);
+                }
+                if (full) reconcilePulledSnapshot(uid, snapshot, dao);
+                boolean uploadsSucceeded = uploadPendingBlocking(uid, dao);
+                NoteWidgetProvider.notifyAllWidgets(context);
+                changed();
+                status(uploadsSucceeded ? "백그라운드 동기화 완료" : "오프라인 변경 재시도 대기");
+                return uploadsSucceeded;
+            } catch (Exception error) {
+                status("백그라운드 동기화 대기 · " + safeMessage(error));
+                return false;
+            }
+        }
+    }
+
+    private static void applyPulledDocument(String uid, DocumentSnapshot document, NoteDao dao) throws Exception {
+        NoteEntity remote = noteFrom(document, uid);
+        List<ChecklistItemEntity> remoteItems = itemsFrom(document);
+        NoteEntity local = dao.getNoteByCloudId(uid, document.getId());
+        if (local == null) {
+            dao.applyRemote(remote, remoteItems);
+            return;
+        }
+        SyncPolicy.Decision decision = SyncPolicy.decide(local.updatedAt, remote.updatedAt);
+        if (decision == SyncPolicy.Decision.UPLOAD_LOCAL) {
+            uploadOneBlocking(uid, local, dao.getItems(local.id), dao);
+            return;
+        }
+        List<ChecklistItemEntity> localItems = dao.getItems(local.id);
+        boolean different = !snapshot(local, localItems).equals(snapshot(remote, remoteItems));
+        if (different && local.syncPending) logConflict(local, remote.updatedAt, localItems, dao);
+        dao.applyRemote(remote, remoteItems);
+    }
+
+    private static void reconcilePulledSnapshot(String uid, QuerySnapshot snapshot, NoteDao dao) throws Exception {
+        Set<String> remoteIds = new HashSet<>();
+        for (DocumentSnapshot document : snapshot.getDocuments()) remoteIds.add(document.getId());
+        for (NoteEntity local : dao.listLinkedNotes(uid)) {
+            if (remoteIds.contains(local.cloudId)) continue;
+            if (local.syncPending) uploadOneBlocking(uid, local, dao.getItems(local.id), dao);
+            else dao.deleteRemoteNoteIfClean(uid, local.cloudId);
+        }
+    }
+
+    private static boolean uploadPendingBlocking(String uid, NoteDao dao) {
+        try {
+            for (NoteEntity note : dao.listPendingNotes(uid)) {
+                uploadOneBlocking(uid, note, dao.getItems(note.id), dao);
+            }
+            for (PendingDeleteEntity pending : dao.listPendingDeletes(uid)) {
+                Tasks.await(notes(uid).document(pending.cloudId).delete(), 30, TimeUnit.SECONDS);
+                dao.deletePendingDelete(pending.ownerUid, pending.cloudId);
+            }
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private static void uploadOneBlocking(String uid, NoteEntity note, List<ChecklistItemEntity> items, NoteDao dao) throws Exception {
+        if (note.cloudId.isEmpty()) return;
+        long version = note.updatedAt;
+        Tasks.await(notes(uid).document(note.cloudId).set(serializeNote(note, items)), 30, TimeUnit.SECONDS);
+        dao.markSynced(note.id, version);
     }
 
     private static void uploadDelete(PendingDeleteEntity pending) {

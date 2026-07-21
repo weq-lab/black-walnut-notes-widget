@@ -44,7 +44,11 @@ public class NoteWidgetProvider extends AppWidgetProvider {
         String action = intent.getAction();
         int widgetId = intent.getIntExtra(EXTRA_WIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
         if (ACTION_REFRESH.equals(action)) {
-            refresh(context, widgetId);
+            PendingResult pending = goAsync();
+            FirestoreSyncManager.pullOnce(context, () -> {
+                refresh(context, widgetId);
+                pending.finish();
+            });
         } else if (ACTION_TOGGLE_ITEM.equals(action)) {
             long itemId = intent.getLongExtra(EXTRA_ITEM_ID, 0);
             long noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0);
