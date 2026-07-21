@@ -66,8 +66,14 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:divider="#180E0A"
-        android:dividerHeight="1dp"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:fadeScrollbars="true"
+        android:scrollbarDefaultDelayBeforeFade="300"
+        android:scrollbarFadeDuration="300"
+        android:scrollbarSize="2dp"
+        android:scrollbarStyle="insideOverlay"
+        android:scrollbarThumbVertical="@drawable/widget_scrollbar_thumb"
         android:scrollbars="vertical" />
 
     <TextView

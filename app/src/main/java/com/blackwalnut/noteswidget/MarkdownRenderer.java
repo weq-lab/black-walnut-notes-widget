@@ -14,7 +14,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class MarkdownRenderer {
-    private static final int MAX_CHARS = 12000;
     private static final Pattern COLOR_SPAN = Pattern.compile(
             "(?is)<span\\s+style\\s*=\\s*[\"']\\s*color\\s*:\\s*(#[0-9a-fA-F]{6,8})\\s*;?\\s*[\"']\\s*>(.*?)</span>"
     );
@@ -78,10 +77,7 @@ final class MarkdownRenderer {
             bodyLines.add(line);
         }
 
-        String bodyText = String.join("\n", bodyLines).trim();
-        if (bodyText.length() > MAX_CHARS) {
-            bodyText = bodyText.substring(0, MAX_CHARS) + "\n…";
-        }
+        String bodyText = String.join("\n", bodyLines);
         if (bodyText.trim().isEmpty()) bodyText = "할 일 없음";
 
         SpannableStringBuilder styled = new SpannableStringBuilder(bodyText);
