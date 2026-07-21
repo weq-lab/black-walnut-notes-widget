@@ -110,9 +110,15 @@ public class NoteWidgetService extends RemoteViewsService {
         public RemoteViews getViewAt(int position) {
             if (position < 0 || position >= rows.size()) return null;
             Row row = rows.get(position);
-            int layoutId = row.type == Row.CHECK
-                    ? R.layout.widget_note_check_row
-                    : row.type == Row.SPACER ? R.layout.widget_note_spacer_row : R.layout.widget_note_body_row;
+            boolean korean = NoteTypography.containsHangul(row.text);
+            int layoutId;
+            if (row.type == Row.CHECK) {
+                layoutId = korean ? R.layout.widget_note_check_row : R.layout.widget_note_check_row_latin;
+            } else if (row.type == Row.SPACER) {
+                layoutId = R.layout.widget_note_spacer_row;
+            } else {
+                layoutId = korean ? R.layout.widget_note_body_row : R.layout.widget_note_body_row_latin;
+            }
             RemoteViews views = new RemoteViews(context.getPackageName(), layoutId);
             views.setInt(R.id.widget_row_root, "setBackgroundColor", background);
             if (row.type != Row.SPACER) {
@@ -143,7 +149,7 @@ public class NoteWidgetService extends RemoteViewsService {
         }
 
         @Override public RemoteViews getLoadingView() { return null; }
-        @Override public int getViewTypeCount() { return 3; }
+        @Override public int getViewTypeCount() { return 5; }
         @Override public long getItemId(int position) { return position < rows.size() ? rows.get(position).itemId + position : position; }
         @Override public boolean hasStableIds() { return false; }
 

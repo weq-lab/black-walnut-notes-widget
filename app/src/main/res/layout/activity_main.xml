@@ -7,12 +7,13 @@
     android:padding="20dp">
 
     <TextView
+        android:id="@+id/app_brand_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Black Walnut Notes"
         android:textColor="#5A3021"
         android:textSize="28sp"
-        android:textStyle="bold" />
+        android:fontFamily="@font/cormorant_garamond_semibold" />
 
     <LinearLayout
         android:layout_width="match_parent"

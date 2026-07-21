@@ -1,4 +1,7 @@
 .gradle/
+.gradle-*/
+.android-sdk/
+.offline-*/
 .idea/
 local.properties
 **/build/
@@ -16,3 +19,7 @@ web/dist/
 web/coverage/
 web/*.tsbuildinfo
 .firebase/
+.vite/
+font sources/
+app/src/main/res/font/*/
+web/public/fonts/

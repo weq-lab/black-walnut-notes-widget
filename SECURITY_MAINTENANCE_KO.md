@@ -78,6 +78,10 @@ GitHub Actions는 다음을 실행합니다.
 
 사용자 입력은 React의 일반 텍스트 입력과 렌더링만 사용합니다. `dangerouslySetInnerHTML`, 입력 HTML 실행, 외부 스크립트 CDN을 도입하지 않습니다.
 
+## 로컬 폰트 유지관리
+
+PWA와 Android는 저장소에 포함된 Cormorant Garamond 및 MaruBuri 정적 TTF만 사용합니다. 런타임 외부 폰트 요청이나 CDN은 허용하지 않습니다. 폰트 교체 시 `FONT_ASSETS_REQUIRED_KO.md`의 네 경로, 내장 메타데이터의 family/PostScript 이름과 400/600 굵기, `THIRD_PARTY_FONTS_LICENSES.md`의 저작권 고지를 함께 검토합니다. 기능 UI는 번들 폰트가 아닌 운영체제 기본 산세리프를 유지합니다.
+
 ## 사고 대응
 
 1. Google 계정 또는 Firebase 프로젝트 접근이 의심되면 Google 세션과 Firebase IAM을 먼저 확인합니다.

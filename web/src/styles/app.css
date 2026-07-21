@@ -1,5 +1,34 @@
+@font-face {
+  font-family: "Black Walnut Cormorant";
+  src: url("../assets/fonts/cormorant-garamond/CormorantGaramond-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Black Walnut Cormorant";
+  src: url("../assets/fonts/cormorant-garamond/CormorantGaramond-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Black Walnut MaruBuri";
+  src: url("../assets/fonts/maruburi/MaruBuri-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Black Walnut MaruBuri";
+  src: url("../assets/fonts/maruburi/MaruBuri-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
 :root {
-  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   color: #c4a06a;
   background: #000;
   font-synthesis: none;
@@ -13,11 +42,19 @@
   --accent-primary: #c4a06a;
   --accent-secondary: #8a624c;
   --danger: #b65f57;
+  --font-functional: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  --font-note-latin: "Black Walnut Cormorant", Georgia, serif;
+  --font-note-korean: "Black Walnut MaruBuri", "Batang", serif;
 }
 
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--app-bg); }
-button, input, textarea, select { font: inherit; }
+button, select { font-family: var(--font-functional); }
+input, textarea { font-family: var(--font-functional); }
+.font-title-latin { font-family: var(--font-note-latin); font-weight: 600; }
+.font-title-korean { font-family: var(--font-note-korean); font-weight: 600; }
+.font-body-latin { font-family: var(--font-note-latin); font-weight: 400; }
+.font-body-korean { font-family: var(--font-note-korean); font-weight: 400; }
 button { color: var(--accent-primary); border: 1px solid var(--border-subtle); background: var(--surface); cursor: pointer; }
 button:disabled { cursor: default; opacity: .42; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
@@ -25,11 +62,12 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 
 .center-screen { min-height: 100%; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 28%, #160c07 0, #080402 24%, #000 64%); }
 .setup-card, .login-card, .choice-card { width: min(560px, 100%); border: 1px solid var(--border-subtle); background: rgba(8, 5, 3, .95); padding: clamp(24px, 6vw, 42px); }
-.setup-card h1, .login-card h1, .choice-card h1 { margin: 8px 0 14px; color: var(--accent-primary); font-size: clamp(24px, 6vw, 36px); line-height: 1.12; font-weight: 650; }
+.setup-card h1, .choice-card h1 { margin: 8px 0 14px; color: var(--accent-primary); font-size: clamp(24px, 6vw, 36px); line-height: 1.12; font-weight: 650; }
+.login-card h1 { margin: 8px 0 14px; color: var(--accent-primary); font-family: var(--font-note-latin); font-size: clamp(28px, 7vw, 42px); line-height: 1.12; font-weight: 600; }
 .setup-card p, .login-card p, .choice-card p { color: #8a624c; line-height: 1.65; }
 .setup-card ul { color: #8a624c; line-height: 1.7; padding-left: 20px; }
 .login-card { display: grid; gap: 18px; }
-.walnut-mark { width: 52px; height: 52px; display: inline-grid; place-items: center; border: 1px solid #5a3021; color: #c4a06a; background: #100a07; font-size: 14px; letter-spacing: .14em; }
+.walnut-mark { width: 52px; height: 52px; display: inline-grid; place-items: center; border: 1px solid #5a3021; color: #c4a06a; background: #100a07; font-family: var(--font-note-latin); font-size: 14px; font-weight: 600; letter-spacing: .14em; }
 .walnut-mark.small { width: 28px; height: 28px; font-size: 9px; }
 .eyebrow { color: #8a624c; text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 700; }
 .muted { color: #6d4b3a !important; font-size: 13px; }
@@ -47,7 +85,7 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 .app-shell { width: 100%; height: 100%; display: grid; grid-template-columns: minmax(280px, 36%) 1fr; background: #000; }
 .sidebar { min-width: 0; height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--surface); border-right: 1px solid var(--border-subtle); }
 .app-header { min-height: 64px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border-subtle); }
-.compact-brand { display: flex; align-items: center; gap: 8px; min-width: 0; color: #8a624c; font-size: 13px; font-weight: 650; letter-spacing: .04em; }
+.compact-brand { display: flex; align-items: center; gap: 8px; min-width: 0; color: #8a624c; font-family: var(--font-note-latin); font-size: 15px; font-weight: 600; letter-spacing: .04em; }
 .new-note { height: 38px; padding: 0 13px; white-space: nowrap; }
 .search-wrap { height: 48px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border-subtle); color: #8a624c; }
 .search-wrap input { width: 100%; height: 32px; border: 0; border-bottom: 1px solid #29150f; color: #c4a06a; background: transparent; outline: 0; }
@@ -92,9 +130,9 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 .conflict-banner button { min-height: 34px; padding: 0 10px; }
 .editor-scroll { min-height: 0; overflow-y: auto; padding: clamp(18px, 4vw, 42px); scrollbar-color: #5a3021 transparent; scrollbar-width: thin; }
 .title-input, .body-input { width: 100%; border: 0; outline: 0; background: transparent; resize: none; }
-.title-input { color: var(--note-title); font-size: clamp(25px, 4vw, 38px); font-weight: 650; line-height: 1.2; padding: 0 0 14px; border-bottom: 1px solid var(--border-subtle); }
-.title-input::placeholder, .body-input::placeholder { color: #29150f; }
-.body-input { min-height: 32vh; margin-top: 18px; color: var(--note-body); font-size: 17px; line-height: 1.65; overflow: hidden; field-sizing: content; }
+.title-input { color: var(--note-title); font-size: clamp(25px, 4vw, 38px); line-height: 1.32; padding: 0 0 14px; border-bottom: 1px solid var(--border-subtle); }
+.title-input::placeholder, .body-input::placeholder { color: #29150f; font-family: var(--font-functional); }
+.body-input { min-height: 32vh; margin-top: 18px; color: var(--note-body); font-size: 17.5px; line-height: 1.7; overflow: hidden; field-sizing: content; }
 .checklist-editor { margin-top: 22px; border-top: 1px solid var(--border-subtle); padding-top: 18px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; }
 .section-heading h3, .preset-section label { color: var(--note-title); font-size: 13px; letter-spacing: .06em; font-weight: 700; }
@@ -102,6 +140,7 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 .check-row { min-height: 44px; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid #100a07; }
 .check-row > input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--note-accent); }
 .check-row > input[type="text"], .check-row > input:not([type]) { min-width: 0; height: 40px; border: 0; background: transparent; color: var(--note-body); outline: 0; }
+.check-row input::placeholder { font-family: var(--font-functional); }
 .checked-text { text-decoration: line-through; opacity: .56; }
 .row-actions { display: flex; }
 .row-actions button { width: 30px; height: 34px; border: 0; color: #6d4b3a; background: transparent; }

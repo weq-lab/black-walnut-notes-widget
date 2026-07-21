@@ -33,6 +33,7 @@ public class MainActivity extends Activity implements FirestoreSyncManager.Liste
         signIn = findViewById(R.id.button_sign_in);
         signOut = findViewById(R.id.button_sign_out);
         importNotes = findViewById(R.id.button_import_notes);
+        NoteTypography.applyBrand(this, findViewById(R.id.app_brand_title));
         noteList.setEmptyView(emptyView);
         findViewById(R.id.button_new_note).setOnClickListener(v -> openEditor(0));
         findViewById(R.id.button_add_widget).setOnClickListener(v -> requestWidget());

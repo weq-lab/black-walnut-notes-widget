@@ -88,7 +88,9 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     }
 
     private static RemoteViews createRemoteViews(Context context, int widgetId, String headerTitle) {
-        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_note);
+        int layoutId = NoteTypography.containsHangul(headerTitle)
+                ? R.layout.widget_note : R.layout.widget_note_latin;
+        RemoteViews views = new RemoteViews(context.getPackageName(), layoutId);
         views.setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.parseColor(WidgetPrefs.background(context, widgetId)));
         views.setTextViewText(R.id.widget_header_title, headerTitle);
         views.setTextColor(R.id.widget_header_title, android.graphics.Color.parseColor(WidgetPrefs.title(context, widgetId)));

@@ -8,6 +8,7 @@ import { usePwa } from "./hooks/usePwa";
 import { createDebouncedTask, type DebouncedTask } from "./lib/debounce";
 import { decideRemoteUpdate } from "./lib/conflict";
 import { deferDelete, type DeferredDelete } from "./lib/deferredDelete";
+import { bodyFontClass, titleFontClass } from "./lib/typography";
 import {
   firebaseErrorMessage,
   getNotesFirestore,
@@ -403,8 +404,8 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
           {loaded && filteredNotes.length === 0 && <p className="list-message">{search ? "검색 결과가 없습니다." : "새 노트를 만들어 시작하세요."}</p>}
           {filteredNotes.map(({ note }) => (
             <button key={note.noteId} className={`note-list-item ${selectedId === note.noteId ? "selected" : ""}`} onClick={() => void selectNote(note)} role="option" aria-selected={selectedId === note.noteId}>
-              <strong>{note.title.trim() || "제목 없음"}</strong>
-              <span>{note.body.trim() || note.checklist[0]?.text || "내용 없음"}</span>
+              <strong className={titleFontClass(note.title.trim() || "제목 없음")}>{note.title.trim() || "제목 없음"}</strong>
+              <span className={bodyFontClass(note.body.trim() || note.checklist[0]?.text || "내용 없음")}>{note.body.trim() || note.checklist[0]?.text || "내용 없음"}</span>
               <time>{new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(note.updatedAt)}</time>
             </button>
           ))}
@@ -445,8 +446,8 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
               </div>
             )}
             <div className="editor-scroll">
-              <input className="title-input" value={draft.title} placeholder="제목" onChange={(event) => editDraft((note) => ({ ...note, title: event.target.value }))} />
-              <textarea className="body-input" value={draft.body} placeholder="메모를 입력하세요" onChange={(event) => editDraft((note) => ({ ...note, body: event.target.value }))} />
+              <input className={`title-input ${titleFontClass(draft.title)}`} value={draft.title} placeholder="제목" onChange={(event) => editDraft((note) => ({ ...note, title: event.target.value }))} />
+              <textarea className={`body-input ${bodyFontClass(draft.body)}`} value={draft.body} placeholder="메모를 입력하세요" onChange={(event) => editDraft((note) => ({ ...note, body: event.target.value }))} />
               <ChecklistEditor items={draft.checklist} onChange={(checklist: ChecklistItem[]) => editDraft((note) => ({ ...note, checklist }))} />
               <section className="preset-section">
                 <label htmlFor="color-preset">색상 프리셋</label>

@@ -11,6 +11,14 @@ Android Black Walnut Notes와 같은 Firebase 프로젝트 및 Google 계정을 
 
 Android의 `google-services.json`은 웹 설정 파일이 아니므로 복사하거나 파싱하지 않습니다.
 
+## 타이포그래피와 오프라인 폰트
+
+- 앱 이름과 브랜드 워드마크는 Cormorant Garamond SemiBold를 사용합니다.
+- 제목·본문·체크리스트에 한글 자모 또는 완성형 한글이 하나라도 있으면 해당 텍스트 영역 전체를 MaruBuri로 표시합니다.
+- 한글이 없으면 제목은 Cormorant Garamond SemiBold, 본문과 체크리스트는 Cormorant Garamond Regular로 표시합니다.
+- 버튼, 검색, 메뉴, 설정, 상태와 오류 메시지는 `Segoe UI`, `Malgun Gothic`, `system-ui`, `sans-serif` 순서의 Windows 시스템 글꼴만 사용합니다.
+- 네 TTF는 PWA 정적 자산으로 로컬 번들되며 서비스 워커 설치 시 CSS가 참조하는 해시 폰트 자산도 앱 셸 캐시에 포함합니다. 외부 폰트 CDN 요청은 없습니다.
+
 ## 로컬 실행과 검증
 
 ```powershell

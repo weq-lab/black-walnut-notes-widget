@@ -53,6 +53,10 @@ public class NoteEditActivity extends Activity {
         TextWatcher watcher = new SimpleWatcher(this::scheduleSave);
         title.addTextChangedListener(watcher);
         body.addTextChangedListener(watcher);
+        title.addTextChangedListener(new TypographyWatcher(title, true));
+        body.addTextChangedListener(new TypographyWatcher(body, false));
+        NoteTypography.applyTitle(this, title, title.getText());
+        NoteTypography.applyBody(this, body, body.getText());
         preset.setOnItemSelectedListener(new SimpleItemSelectedListener(this::scheduleSave));
         noteId = getIntent().getLongExtra(EXTRA_NOTE_ID, 0);
         if (noteId == 0) createNote(); else loadNote();
@@ -113,8 +117,10 @@ public class NoteEditActivity extends Activity {
         EditText field = row.findViewById(R.id.check_item_text);
         box.setChecked(checked);
         field.setText(text);
+        NoteTypography.applyBody(this, field, text);
         box.setOnCheckedChangeListener((button, value) -> scheduleSave());
         field.addTextChangedListener(new SimpleWatcher(this::scheduleSave));
+        field.addTextChangedListener(new TypographyWatcher(field, false));
         row.findViewById(R.id.button_remove_check_item).setOnClickListener(v -> {
             checklist.removeView(row);
             scheduleSave();
@@ -192,6 +198,21 @@ public class NoteEditActivity extends Activity {
         SimpleWatcher(Runnable changed) { this.changed = changed; }
         @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
         @Override public void onTextChanged(CharSequence s, int start, int before, int count) { changed.run(); }
+        @Override public void afterTextChanged(Editable s) { }
+    }
+
+    private final class TypographyWatcher implements TextWatcher {
+        private final TextView view;
+        private final boolean titleRole;
+        TypographyWatcher(TextView view, boolean titleRole) {
+            this.view = view;
+            this.titleRole = titleRole;
+        }
+        @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+        @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+            if (titleRole) NoteTypography.applyTitle(NoteEditActivity.this, view, s);
+            else NoteTypography.applyBody(NoteEditActivity.this, view, s);
+        }
         @Override public void afterTextChanged(Editable s) { }
     }
 }

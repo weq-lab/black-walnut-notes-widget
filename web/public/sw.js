@@ -9,7 +9,15 @@ self.addEventListener("install", (event) => {
     const html = await response.clone().text();
     await cache.put("/index.html", response);
     const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
-    if (assets.length > 0) await cache.addAll([...new Set(assets)]);
+    const uniqueAssets = [...new Set(assets)];
+    if (uniqueAssets.length > 0) await cache.addAll(uniqueAssets);
+    const stylesheets = uniqueAssets.filter((asset) => asset.endsWith(".css"));
+    const fontAssets = [];
+    for (const stylesheet of stylesheets) {
+      const css = await (await fetch(stylesheet, { cache: "no-store" })).text();
+      fontAssets.push(...[...css.matchAll(/url\(["']?(\/assets\/[^)"']+)["']?\)/g)].map((match) => match[1]));
+    }
+    if (fontAssets.length > 0) await cache.addAll([...new Set(fontAssets)]);
   })());
 });
 

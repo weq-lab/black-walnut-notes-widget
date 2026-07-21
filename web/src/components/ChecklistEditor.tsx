@@ -1,4 +1,5 @@
 import type { ChecklistItem } from "../models/note";
+import { bodyFontClass } from "../lib/typography";
 
 interface Props {
   items: ChecklistItem[];
@@ -29,7 +30,7 @@ export function ChecklistEditor({ items, onChange }: Props) {
           <div className="check-row" key={`${index}-${item.position}`}>
             <input type="checkbox" checked={item.checked} onChange={(event) => update(index, { checked: event.target.checked })} aria-label={`${index + 1}번 항목 체크`} />
             <input
-              className={item.checked ? "checked-text" : ""}
+              className={`${bodyFontClass(item.text)} ${item.checked ? "checked-text" : ""}`}
               value={item.text}
               placeholder="체크리스트 항목"
               onChange={(event) => update(index, { text: event.target.value })}

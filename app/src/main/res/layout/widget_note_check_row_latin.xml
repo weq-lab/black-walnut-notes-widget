@@ -15,7 +15,7 @@
         android:id="@+id/widget_row_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fontFamily="@font/maruburi_regular"
+        android:fontFamily="@font/cormorant_garamond_regular"
         android:textColor="#D1AE6F"
         android:textSize="16sp" />
 </LinearLayout>

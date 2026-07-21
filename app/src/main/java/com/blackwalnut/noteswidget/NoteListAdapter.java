@@ -36,8 +36,12 @@ final class NoteListAdapter extends BaseAdapter {
         if (preset.title == null || preset.body == null || preset.accent == null) {
             preset = ColorPresets.byName(ColorPresets.BLACK_WALNUT);
         }
-        title.setText(note.title.trim().isEmpty() ? "제목 없음" : note.title);
-        preview.setText(note.body.trim().isEmpty() ? "체크리스트 또는 본문을 추가하세요" : note.body);
+        String displayTitle = note.title.trim().isEmpty() ? "제목 없음" : note.title;
+        String displayPreview = note.body.trim().isEmpty() ? "체크리스트 또는 본문을 추가하세요" : note.body;
+        title.setText(displayTitle);
+        preview.setText(displayPreview);
+        NoteTypography.applyTitle(view.getContext(), title, displayTitle);
+        NoteTypography.applyBody(view.getContext(), preview, displayPreview);
         time.setText(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(note.updatedAt)));
         title.setTextColor(Color.parseColor(preset.title));
         preview.setTextColor(Color.parseColor(preset.body));
