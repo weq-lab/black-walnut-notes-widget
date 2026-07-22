@@ -16,4 +16,5 @@ public class NoteEntity {
     public String cloudId = "";
     public String ownerUid = "";
     public boolean syncPending;
+    public long lastSyncedUpdatedAt;
 }

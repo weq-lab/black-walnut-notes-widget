@@ -148,7 +148,14 @@ public class NoteWidgetService extends RemoteViewsService {
             return views;
         }
 
-        @Override public RemoteViews getLoadingView() { return null; }
+        @Override public RemoteViews getLoadingView() {
+            RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_note_loading_row);
+            int loadingBackground = parse(WidgetPrefs.background(context, widgetId), Color.BLACK);
+            int loadingBody = parse(WidgetPrefs.body(context, widgetId), Color.rgb(58, 32, 23));
+            views.setInt(R.id.widget_row_root, "setBackgroundColor", loadingBackground);
+            views.setTextColor(R.id.widget_row_text, loadingBody);
+            return views;
+        }
         @Override public int getViewTypeCount() { return 5; }
         @Override public long getItemId(int position) { return position < rows.size() ? rows.get(position).itemId + position : position; }
         @Override public boolean hasStableIds() { return false; }

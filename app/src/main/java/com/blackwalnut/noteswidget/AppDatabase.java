@@ -13,7 +13,7 @@ import java.util.concurrent.Executors;
 
 @Database(
         entities = {NoteEntity.class, ChecklistItemEntity.class, PendingDeleteEntity.class, SyncConflictEntity.class},
-        version = 2,
+        version = 4,
         exportSchema = false
 )
 public abstract class AppDatabase extends RoomDatabase {
@@ -30,6 +30,18 @@ public abstract class AppDatabase extends RoomDatabase {
             database.execSQL("CREATE TABLE IF NOT EXISTS sync_conflicts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, localNoteId INTEGER NOT NULL, ownerUid TEXT NOT NULL, cloudId TEXT NOT NULL, detectedAt INTEGER NOT NULL, localUpdatedAt INTEGER NOT NULL, remoteUpdatedAt INTEGER NOT NULL, localSnapshot TEXT NOT NULL)");
         }
     };
+    static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE notes ADD COLUMN lastSyncedUpdatedAt INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+    static final Migration MIGRATION_3_4 = new Migration(3, 4) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE pending_deletes ADD COLUMN expectedRemoteUpdatedAt INTEGER NOT NULL DEFAULT 0");
+        }
+    };
 
     public abstract NoteDao noteDao();
 
@@ -41,7 +53,7 @@ public abstract class AppDatabase extends RoomDatabase {
                             context.getApplicationContext(),
                             AppDatabase.class,
                             "black-walnut-notes.db"
-                    ).addMigrations(MIGRATION_1_2).build();
+                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build();
                 }
             }
         }

@@ -59,10 +59,15 @@ final class WidgetPrefs {
     static String body(Context context, int id) { return prefs(context).getString("body_" + id, DEFAULT_BODY); }
     static String accent(Context context, int id) { return prefs(context).getString("accent_" + id, DEFAULT_ACCENT); }
     static float textSize(Context context, int id) { return prefs(context).getFloat("size_" + id, DEFAULT_TEXT_SIZE); }
+    static boolean collapsed(Context context, int id) { return prefs(context).getBoolean(collapseKey(id), false); }
+    static void setCollapsed(Context context, int id, boolean collapsed) {
+        prefs(context).edit().putBoolean(collapseKey(id), collapsed).apply();
+    }
+    static String collapseKey(int id) { return "collapsed_" + id; }
 
     static void delete(Context context, int id) {
         SharedPreferences.Editor editor = prefs(context).edit();
-        String[] keys = {"source_", "note_", "uri_", "file_", "preset_", "bg_", "title_", "body_", "accent_", "size_"};
+        String[] keys = {"source_", "note_", "uri_", "file_", "preset_", "bg_", "title_", "body_", "accent_", "size_", "collapsed_"};
         for (String key : keys) editor.remove(key + id);
         editor.apply();
     }

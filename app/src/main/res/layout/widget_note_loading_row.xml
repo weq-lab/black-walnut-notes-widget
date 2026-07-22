@@ -5,17 +5,17 @@
     android:layout_height="wrap_content"
     android:background="#000000"
     android:gravity="center_vertical"
-    android:minHeight="42dp"
     android:paddingStart="0dp"
-    android:paddingTop="7dp"
+    android:paddingTop="6dp"
     android:paddingEnd="8dp"
-    android:paddingBottom="7dp">
+    android:paddingBottom="6dp">
 
     <TextView
         android:id="@+id/widget_row_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:fontFamily="@font/maruburi_regular"
-        android:textColor="#D1AE6F"
-        android:textSize="16sp" />
+        android:text="불러오는 중…"
+        android:textColor="#3A2017"
+        android:textSize="14sp" />
 </LinearLayout>

@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.RemoteViews;
 
 import java.io.BufferedReader;
@@ -22,6 +23,7 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     static final String ACTION_TOGGLE_ITEM = "com.blackwalnut.noteswidget.ACTION_TOGGLE_ITEM";
     static final String ACTION_OPEN_NOTE = "com.blackwalnut.noteswidget.ACTION_OPEN_NOTE";
     static final String ACTION_OPEN_FILE = "com.blackwalnut.noteswidget.ACTION_OPEN_FILE";
+    static final String ACTION_TOGGLE_COLLAPSE = "com.blackwalnut.noteswidget.ACTION_TOGGLE_COLLAPSE";
     static final String EXTRA_WIDGET_ID = "widget_id";
     static final String EXTRA_NOTE_ID = "note_id";
     static final String EXTRA_ITEM_ID = "item_id";
@@ -49,14 +51,18 @@ public class NoteWidgetProvider extends AppWidgetProvider {
                 refresh(context, widgetId);
                 pending.finish();
             });
+        } else if (ACTION_TOGGLE_COLLAPSE.equals(action) && widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            WidgetPrefs.setCollapsed(context, widgetId, !WidgetPrefs.collapsed(context, widgetId));
+            updateWidget(context, AppWidgetManager.getInstance(context), widgetId);
         } else if (ACTION_TOGGLE_ITEM.equals(action)) {
             long itemId = intent.getLongExtra(EXTRA_ITEM_ID, 0);
             long noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0);
             if (itemId > 0 && noteId > 0) {
                 PendingResult pending = goAsync();
                 AppDatabase.IO.execute(() -> {
-                    AppDatabase.get(context).noteDao().toggleItemAndTouch(itemId, noteId, System.currentTimeMillis());
-                    FirestoreSyncManager.kick(context);
+                    boolean changed = AppDatabase.get(context).noteDao()
+                            .toggleItemAndTouch(itemId, noteId, System.currentTimeMillis());
+                    if (changed) FirestoreSyncManager.kick(context);
                     refresh(context, widgetId);
                     pending.finish();
                 });
@@ -94,6 +100,17 @@ public class NoteWidgetProvider extends AppWidgetProvider {
         views.setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.parseColor(WidgetPrefs.background(context, widgetId)));
         views.setTextViewText(R.id.widget_header_title, headerTitle);
         views.setTextColor(R.id.widget_header_title, android.graphics.Color.parseColor(WidgetPrefs.title(context, widgetId)));
+        int background = parseColor(WidgetPrefs.background(context, widgetId), android.graphics.Color.BLACK);
+        int body = parseColor(WidgetPrefs.body(context, widgetId), android.graphics.Color.rgb(58, 32, 23));
+        int accent = parseColor(WidgetPrefs.accent(context, widgetId), android.graphics.Color.rgb(209, 174, 111));
+        boolean collapsed = WidgetPrefs.collapsed(context, widgetId);
+        views.setInt(R.id.widget_empty, "setBackgroundColor", background);
+        views.setTextColor(R.id.widget_empty, body);
+        views.setViewVisibility(R.id.widget_list, collapsed ? View.GONE : View.VISIBLE);
+        views.setViewVisibility(R.id.widget_empty, collapsed ? View.GONE : View.VISIBLE);
+        views.setImageViewResource(R.id.widget_collapse, collapsed ? R.drawable.ic_chevron_down : R.drawable.ic_chevron_up);
+        views.setContentDescription(R.id.widget_collapse, collapsed ? "본문 펼치기" : "본문 접기");
+        views.setInt(R.id.widget_collapse, "setColorFilter", accent);
         Intent service = new Intent(context, NoteWidgetService.class)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
         service.setData(Uri.parse(service.toUri(Intent.URI_INTENT_SCHEME)));
@@ -110,6 +127,7 @@ public class NoteWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_new, newNoteIntent(context, widgetId));
         views.setOnClickPendingIntent(R.id.widget_settings, configIntent(context, widgetId));
         views.setOnClickPendingIntent(R.id.widget_header_title, headerIntent(context, widgetId));
+        views.setOnClickPendingIntent(R.id.widget_collapse, collapseIntent(context, widgetId));
         return views;
     }
 
@@ -207,6 +225,16 @@ public class NoteWidgetProvider extends AppWidgetProvider {
     private static PendingIntent refreshIntent(Context context, int widgetId) {
         Intent intent = new Intent(context, NoteWidgetProvider.class).setAction(ACTION_REFRESH).putExtra(EXTRA_WIDGET_ID, widgetId);
         return PendingIntent.getBroadcast(context, 10000 + widgetId, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static PendingIntent collapseIntent(Context context, int widgetId) {
+        Intent intent = new Intent(context, NoteWidgetProvider.class)
+                .setAction(ACTION_TOGGLE_COLLAPSE)
+                .putExtra(EXTRA_WIDGET_ID, widgetId);
+        return PendingIntent.getBroadcast(
+                context, 60000 + widgetId, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
     }
 
     private static PendingIntent newNoteIntent(Context context, int widgetId) {

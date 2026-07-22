@@ -7,6 +7,7 @@ import android.os.Looper;
 
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentChange;
+import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
@@ -176,14 +177,79 @@ final class FirestoreSyncManager {
 
     private static void uploadNote(String uid, NoteEntity note, List<ChecklistItemEntity> items) {
         if (note.cloudId.isEmpty()) return;
-        Map<String, Object> data = serializeNote(note, items);
-        long uploadedVersion = note.updatedAt;
-        notes(uid).document(note.cloudId).set(data)
-                .addOnSuccessListener(unused -> AppDatabase.IO.execute(() -> {
-                    AppDatabase.get(appContext).noteDao().markSynced(note.id, uploadedVersion);
+        transactionalUpload(uid, note, items)
+                .addOnSuccessListener(result -> AppDatabase.IO.execute(() -> {
+                    NoteDao dao = AppDatabase.get(appContext).noteDao();
+                    if (result.conflict) {
+                        if (result.remote != null) resolveKeepBoth(note, items, result.remote, result.remoteItems, dao);
+                        else resolveRemoteDeletionConflict(note, items, dao);
+                        status("동기화 충돌 · 원격 원본과 로컬 충돌 사본 보존됨");
+                        NoteWidgetProvider.notifyAllWidgets(appContext);
+                        changed();
+                        return;
+                    }
+                    if (result.sameContent) dao.markSameContentSynced(note.id, note.updatedAt, result.remoteUpdatedAt);
+                    else dao.markSynced(note.id, note.updatedAt);
                     status("동기화 완료");
                 }))
                 .addOnFailureListener(error -> status("오프라인 변경 보관 중 · 연결되면 재시도"));
+    }
+
+    private static com.google.android.gms.tasks.Task<UploadResult> transactionalUpload(
+            String uid,
+            NoteEntity local,
+            List<ChecklistItemEntity> localItems
+    ) {
+        DocumentReference reference = notes(uid).document(local.cloudId);
+        return FirebaseFirestore.getInstance().runTransaction(transaction -> {
+            DocumentSnapshot snapshot = transaction.get(reference);
+            boolean remoteExists = snapshot.exists();
+            NoteEntity remote = remoteExists ? noteFrom(snapshot, uid) : null;
+            List<ChecklistItemEntity> remoteItems = remoteExists ? itemsFrom(snapshot) : new ArrayList<>();
+            boolean sameContent = remote != null && sameContent(local, localItems, remote, remoteItems);
+            long remoteUpdatedAt = remote == null ? 0L : remote.updatedAt;
+            SyncPolicy.UploadDecision decision = SyncPolicy.decideUpload(
+                    local.lastSyncedUpdatedAt,
+                    remoteExists,
+                    remoteUpdatedAt,
+                    sameContent
+            );
+            if (decision == SyncPolicy.UploadDecision.KEEP_LOCAL_CONFLICT) {
+                return UploadResult.conflict(remote, remoteItems, remoteUpdatedAt);
+            }
+            if (decision == SyncPolicy.UploadDecision.SAME_CONTENT) {
+                return UploadResult.sameContent(remoteUpdatedAt);
+            }
+            transaction.set(reference, serializeNote(local, localItems));
+            return UploadResult.written(local.updatedAt);
+        });
+    }
+
+    private static final class UploadResult {
+        final boolean conflict;
+        final boolean sameContent;
+        final long remoteUpdatedAt;
+        final NoteEntity remote;
+        final List<ChecklistItemEntity> remoteItems;
+
+        private UploadResult(boolean conflict, boolean sameContent, long remoteUpdatedAt,
+                             NoteEntity remote, List<ChecklistItemEntity> remoteItems) {
+            this.conflict = conflict;
+            this.sameContent = sameContent;
+            this.remoteUpdatedAt = remoteUpdatedAt;
+            this.remote = remote;
+            this.remoteItems = remoteItems;
+        }
+
+        static UploadResult conflict(NoteEntity remote, List<ChecklistItemEntity> remoteItems, long remoteUpdatedAt) {
+            return new UploadResult(true, false, remoteUpdatedAt, remote, remoteItems);
+        }
+        static UploadResult sameContent(long remoteUpdatedAt) {
+            return new UploadResult(false, true, remoteUpdatedAt, null, new ArrayList<>());
+        }
+        static UploadResult written(long updatedAt) {
+            return new UploadResult(false, false, updatedAt, null, new ArrayList<>());
+        }
     }
 
     private static Map<String, Object> serializeNote(NoteEntity note, List<ChecklistItemEntity> items) {
@@ -213,15 +279,18 @@ final class FirestoreSyncManager {
                 Query query = full ? notes(uid) : notes(uid).whereGreaterThanOrEqualTo("updatedAt", incrementalStart);
                 QuerySnapshot snapshot = Tasks.await(query.get(Source.SERVER), 30, TimeUnit.SECONDS);
                 NoteDao dao = AppDatabase.get(context).noteDao();
+                boolean conflict = false;
                 for (DocumentSnapshot document : snapshot.getDocuments()) {
-                    applyPulledDocument(uid, document, dao);
+                    conflict |= applyPulledDocument(uid, document, dao);
                 }
-                if (full) reconcilePulledSnapshot(uid, snapshot, dao);
-                boolean uploadsSucceeded = uploadPendingBlocking(uid, dao);
+                if (full) conflict |= reconcilePulledSnapshot(uid, snapshot, dao);
+                UploadBatchResult uploads = uploadPendingBlocking(uid, dao);
+                conflict |= uploads.conflict;
                 NoteWidgetProvider.notifyAllWidgets(context);
                 changed();
-                status(uploadsSucceeded ? "백그라운드 동기화 완료" : "오프라인 변경 재시도 대기");
-                return uploadsSucceeded;
+                if (conflict) status("동기화 충돌 · 로컬 변경 보존됨");
+                else status(uploads.success ? "백그라운드 동기화 완료" : "오프라인 변경 재시도 대기");
+                return uploads.success;
             } catch (Exception error) {
                 status("백그라운드 동기화 대기 · " + safeMessage(error));
                 return false;
@@ -229,66 +298,140 @@ final class FirestoreSyncManager {
         }
     }
 
-    private static void applyPulledDocument(String uid, DocumentSnapshot document, NoteDao dao) throws Exception {
+    private static boolean applyPulledDocument(String uid, DocumentSnapshot document, NoteDao dao) {
         NoteEntity remote = noteFrom(document, uid);
         List<ChecklistItemEntity> remoteItems = itemsFrom(document);
         NoteEntity local = dao.getNoteByCloudId(uid, document.getId());
         if (local == null) {
             dao.applyRemote(remote, remoteItems);
-            return;
-        }
-        SyncPolicy.Decision decision = SyncPolicy.decide(local.updatedAt, remote.updatedAt);
-        if (decision == SyncPolicy.Decision.UPLOAD_LOCAL) {
-            uploadOneBlocking(uid, local, dao.getItems(local.id), dao);
-            return;
+            return false;
         }
         List<ChecklistItemEntity> localItems = dao.getItems(local.id);
-        boolean different = !snapshot(local, localItems).equals(snapshot(remote, remoteItems));
-        if (different && local.syncPending) logConflict(local, remote.updatedAt, localItems, dao);
+        boolean different = !sameContent(local, localItems, remote, remoteItems);
+        SyncPolicy.RemoteDecision decision = SyncPolicy.decideRemote(local.syncPending, different);
+        if (decision == SyncPolicy.RemoteDecision.KEEP_LOCAL_CONFLICT) {
+            resolveKeepBoth(local, localItems, remote, remoteItems, dao);
+            return true;
+        }
         dao.applyRemote(remote, remoteItems);
+        return false;
     }
 
-    private static void reconcilePulledSnapshot(String uid, QuerySnapshot snapshot, NoteDao dao) throws Exception {
+    private static boolean reconcilePulledSnapshot(String uid, QuerySnapshot snapshot, NoteDao dao) throws Exception {
+        boolean conflict = false;
         Set<String> remoteIds = new HashSet<>();
         for (DocumentSnapshot document : snapshot.getDocuments()) remoteIds.add(document.getId());
         for (NoteEntity local : dao.listLinkedNotes(uid)) {
             if (remoteIds.contains(local.cloudId)) continue;
-            if (local.syncPending) uploadOneBlocking(uid, local, dao.getItems(local.id), dao);
+            if (local.syncPending) conflict |= uploadOneBlocking(uid, local, dao.getItems(local.id), dao).conflict;
             else dao.deleteRemoteNoteIfClean(uid, local.cloudId);
         }
+        return conflict;
     }
 
-    private static boolean uploadPendingBlocking(String uid, NoteDao dao) {
+    private static UploadBatchResult uploadPendingBlocking(String uid, NoteDao dao) {
+        UploadBatchResult batch = new UploadBatchResult();
         try {
             for (NoteEntity note : dao.listPendingNotes(uid)) {
-                uploadOneBlocking(uid, note, dao.getItems(note.id), dao);
+                batch.conflict |= uploadOneBlocking(uid, note, dao.getItems(note.id), dao).conflict;
             }
             for (PendingDeleteEntity pending : dao.listPendingDeletes(uid)) {
-                Tasks.await(notes(uid).document(pending.cloudId).delete(), 30, TimeUnit.SECONDS);
-                dao.deletePendingDelete(pending.ownerUid, pending.cloudId);
+                DeleteResult result = Tasks.await(transactionalDelete(pending), 30, TimeUnit.SECONDS);
+                finishDelete(pending, result, dao);
+                batch.conflict |= result.conflict;
             }
-            return true;
+            return batch;
         } catch (Exception error) {
-            return false;
+            batch.success = false;
+            return batch;
         }
     }
 
-    private static void uploadOneBlocking(String uid, NoteEntity note, List<ChecklistItemEntity> items, NoteDao dao) throws Exception {
-        if (note.cloudId.isEmpty()) return;
-        long version = note.updatedAt;
-        Tasks.await(notes(uid).document(note.cloudId).set(serializeNote(note, items)), 30, TimeUnit.SECONDS);
-        dao.markSynced(note.id, version);
+    private static UploadResult uploadOneBlocking(String uid, NoteEntity note, List<ChecklistItemEntity> items, NoteDao dao) throws Exception {
+        if (note.cloudId.isEmpty()) return UploadResult.written(note.updatedAt);
+        UploadResult result = Tasks.await(transactionalUpload(uid, note, items), 30, TimeUnit.SECONDS);
+        if (result.conflict) {
+            if (result.remote != null) resolveKeepBoth(note, items, result.remote, result.remoteItems, dao);
+            else resolveRemoteDeletionConflict(note, items, dao);
+            return result;
+        }
+        if (result.sameContent) dao.markSameContentSynced(note.id, note.updatedAt, result.remoteUpdatedAt);
+        else dao.markSynced(note.id, note.updatedAt);
+        return result;
+    }
+
+    private static final class UploadBatchResult {
+        boolean success = true;
+        boolean conflict;
+    }
+
+    private static com.google.android.gms.tasks.Task<DeleteResult> transactionalDelete(PendingDeleteEntity pending) {
+        DocumentReference reference = notes(pending.ownerUid).document(pending.cloudId);
+        return FirebaseFirestore.getInstance().runTransaction(transaction -> {
+            DocumentSnapshot snapshot = transaction.get(reference);
+            if (!snapshot.exists()) return DeleteResult.success();
+            NoteEntity remote = noteFrom(snapshot, pending.ownerUid);
+            List<ChecklistItemEntity> remoteItems = itemsFrom(snapshot);
+            SyncPolicy.DeleteDecision decision = SyncPolicy.decideDelete(
+                    pending.expectedRemoteUpdatedAt,
+                    true,
+                    remote.updatedAt
+            );
+            if (decision == SyncPolicy.DeleteDecision.CONFLICT) {
+                return DeleteResult.conflict(remote, remoteItems);
+            }
+            transaction.delete(reference);
+            return DeleteResult.success();
+        });
+    }
+
+    private static void finishDelete(PendingDeleteEntity pending, DeleteResult result, NoteDao dao) {
+        dao.deletePendingDelete(pending.ownerUid, pending.cloudId);
+        if (!result.conflict || result.remote == null) return;
+        SyncConflictEntity conflict = new SyncConflictEntity();
+        conflict.localNoteId = 0L;
+        conflict.ownerUid = pending.ownerUid;
+        conflict.cloudId = pending.cloudId;
+        conflict.detectedAt = System.currentTimeMillis();
+        conflict.localUpdatedAt = pending.expectedRemoteUpdatedAt;
+        conflict.remoteUpdatedAt = result.remote.updatedAt;
+        conflict.localSnapshot = "conditional delete rejected";
+        dao.insertConflict(conflict);
+        dao.applyRemote(result.remote, result.remoteItems);
+    }
+
+    private static final class DeleteResult {
+        final boolean conflict;
+        final NoteEntity remote;
+        final List<ChecklistItemEntity> remoteItems;
+
+        private DeleteResult(boolean conflict, NoteEntity remote, List<ChecklistItemEntity> remoteItems) {
+            this.conflict = conflict;
+            this.remote = remote;
+            this.remoteItems = remoteItems;
+        }
+
+        static DeleteResult success() { return new DeleteResult(false, null, new ArrayList<>()); }
+        static DeleteResult conflict(NoteEntity remote, List<ChecklistItemEntity> remoteItems) {
+            return new DeleteResult(true, remote, remoteItems);
+        }
     }
 
     private static void uploadDelete(PendingDeleteEntity pending) {
-        notes(pending.ownerUid).document(pending.cloudId).delete()
-                .addOnSuccessListener(unused -> AppDatabase.IO.execute(() ->
-                        AppDatabase.get(appContext).noteDao().deletePendingDelete(pending.ownerUid, pending.cloudId)))
+        transactionalDelete(pending)
+                .addOnSuccessListener(result -> AppDatabase.IO.execute(() -> {
+                    NoteDao dao = AppDatabase.get(appContext).noteDao();
+                    finishDelete(pending, result, dao);
+                    if (result.conflict) status("삭제 충돌 · 원격 변경 보존됨");
+                    NoteWidgetProvider.notifyAllWidgets(appContext);
+                    changed();
+                }))
                 .addOnFailureListener(error -> status("삭제 변경 보관 중 · 연결되면 재시도"));
     }
 
     private static void applySnapshot(String uid, QuerySnapshot snapshot) {
         NoteDao dao = AppDatabase.get(appContext).noteDao();
+        boolean conflict = false;
         for (DocumentChange change : snapshot.getDocumentChanges()) {
             DocumentSnapshot document = change.getDocument();
             if (document.getMetadata().hasPendingWrites()) continue;
@@ -298,31 +441,33 @@ final class FirestoreSyncManager {
                 else dao.deleteRemoteNoteIfClean(uid, document.getId());
                 continue;
             }
-            applyRemoteDocument(uid, document, dao);
+            conflict |= applyRemoteDocument(uid, document, dao);
         }
         if (!snapshot.getMetadata().isFromCache()) reconcileServerSnapshot(uid, snapshot, dao);
         NoteWidgetProvider.notifyAllWidgets(appContext);
         changed();
-        status(snapshot.getMetadata().isFromCache() ? "오프라인 캐시 사용 중" : "실시간 동기화 연결됨");
+        status(conflict
+                ? "동기화 충돌 · 로컬 변경 보존됨"
+                : snapshot.getMetadata().isFromCache() ? "오프라인 캐시 사용 중" : "실시간 동기화 연결됨");
     }
 
-    private static void applyRemoteDocument(String uid, DocumentSnapshot document, NoteDao dao) {
+    private static boolean applyRemoteDocument(String uid, DocumentSnapshot document, NoteDao dao) {
         NoteEntity remote = noteFrom(document, uid);
         List<ChecklistItemEntity> remoteItems = itemsFrom(document);
         NoteEntity local = dao.getNoteByCloudId(uid, document.getId());
         if (local == null) {
             dao.applyRemote(remote, remoteItems);
-            return;
-        }
-        SyncPolicy.Decision decision = SyncPolicy.decide(local.updatedAt, remote.updatedAt);
-        if (decision == SyncPolicy.Decision.UPLOAD_LOCAL) {
-            uploadNote(uid, local, dao.getItems(local.id));
-            return;
+            return false;
         }
         List<ChecklistItemEntity> localItems = dao.getItems(local.id);
-        boolean different = !snapshot(local, localItems).equals(snapshot(remote, remoteItems));
-        if (different && local.syncPending) logConflict(local, remote.updatedAt, localItems, dao);
+        boolean different = !sameContent(local, localItems, remote, remoteItems);
+        SyncPolicy.RemoteDecision decision = SyncPolicy.decideRemote(local.syncPending, different);
+        if (decision == SyncPolicy.RemoteDecision.KEEP_LOCAL_CONFLICT) {
+            resolveKeepBoth(local, localItems, remote, remoteItems, dao);
+            return true;
+        }
         dao.applyRemote(remote, remoteItems);
+        return false;
     }
 
     private static void reconcileServerSnapshot(String uid, QuerySnapshot snapshot, NoteDao dao) {
@@ -347,6 +492,7 @@ final class FirestoreSyncManager {
         note.colorPreset = stringValue(document.get("colorPreset"));
         if (note.colorPreset.isEmpty()) note.colorPreset = ColorPresets.BLACK_WALNUT;
         note.syncPending = false;
+        note.lastSyncedUpdatedAt = note.updatedAt;
         return note;
     }
 
@@ -367,6 +513,7 @@ final class FirestoreSyncManager {
     }
 
     private static void logConflict(NoteEntity local, long remoteUpdatedAt, List<ChecklistItemEntity> items, NoteDao dao) {
+        if (dao.conflictCount(local.ownerUid, local.cloudId, local.updatedAt, remoteUpdatedAt) > 0) return;
         SyncConflictEntity conflict = new SyncConflictEntity();
         conflict.localNoteId = local.id;
         conflict.ownerUid = local.ownerUid;
@@ -376,6 +523,68 @@ final class FirestoreSyncManager {
         conflict.remoteUpdatedAt = remoteUpdatedAt;
         conflict.localSnapshot = snapshot(local, items);
         dao.insertConflict(conflict);
+    }
+
+    private static void resolveKeepBoth(
+            NoteEntity local,
+            List<ChecklistItemEntity> localItems,
+            NoteEntity remote,
+            List<ChecklistItemEntity> remoteItems,
+            NoteDao dao
+    ) {
+        SyncConflictEntity conflict = new SyncConflictEntity();
+        conflict.localNoteId = local.id;
+        conflict.ownerUid = local.ownerUid;
+        conflict.cloudId = local.cloudId;
+        conflict.detectedAt = System.currentTimeMillis();
+        conflict.localUpdatedAt = local.updatedAt;
+        conflict.remoteUpdatedAt = remote.updatedAt;
+        conflict.localSnapshot = snapshot(local, localItems);
+        NoteEntity copy = ConflictCopyFactory.createNoteCopy(local, System.currentTimeMillis());
+        List<ChecklistItemEntity> copyItems = ConflictCopyFactory.createItemCopies(localItems);
+        dao.keepBoth(local, localItems, remote, remoteItems, conflict, copy, copyItems);
+    }
+
+    private static void resolveRemoteDeletionConflict(
+            NoteEntity local,
+            List<ChecklistItemEntity> localItems,
+            NoteDao dao
+    ) {
+        SyncConflictEntity conflict = new SyncConflictEntity();
+        conflict.localNoteId = local.id;
+        conflict.ownerUid = local.ownerUid;
+        conflict.cloudId = local.cloudId;
+        conflict.detectedAt = System.currentTimeMillis();
+        conflict.localUpdatedAt = local.updatedAt;
+        conflict.remoteUpdatedAt = 0L;
+        conflict.localSnapshot = snapshot(local, localItems);
+        NoteEntity copy = ConflictCopyFactory.createNoteCopy(local, System.currentTimeMillis());
+        dao.preserveAfterRemoteDelete(local, conflict, copy);
+    }
+
+    private static boolean sameContent(
+            NoteEntity left,
+            List<ChecklistItemEntity> leftItems,
+            NoteEntity right,
+            List<ChecklistItemEntity> rightItems
+    ) {
+        if (!left.title.equals(right.title)
+                || !left.body.equals(right.body)
+                || left.createdAt != right.createdAt
+                || !left.colorPreset.equals(right.colorPreset)
+                || leftItems.size() != rightItems.size()) {
+            return false;
+        }
+        for (int index = 0; index < leftItems.size(); index++) {
+            ChecklistItemEntity leftItem = leftItems.get(index);
+            ChecklistItemEntity rightItem = rightItems.get(index);
+            if (!leftItem.text.equals(rightItem.text)
+                    || leftItem.checked != rightItem.checked
+                    || leftItem.position != rightItem.position) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String snapshot(NoteEntity note, List<ChecklistItemEntity> items) {

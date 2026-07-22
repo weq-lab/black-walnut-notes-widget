@@ -8,4 +8,5 @@ public class PendingDeleteEntity {
     @NonNull public String ownerUid = "";
     @NonNull public String cloudId = "";
     public long deletedAt;
+    public long expectedRemoteUpdatedAt;
 }

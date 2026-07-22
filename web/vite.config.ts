@@ -30,7 +30,7 @@ function copyPublicShell(): Plugin {
 }
 
 export default defineConfig({
-  publicDir: false,
+  publicDir: "public",
   plugins: [react(), copyPublicShell()],
   build: {
     sourcemap: false,

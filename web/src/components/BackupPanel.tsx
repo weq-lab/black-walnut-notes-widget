@@ -54,7 +54,8 @@ export function BackupPanel({ db, uid, notes, cacheMode, onClose }: Props) {
     if (!window.confirm(`${restoreNotes.length}개 문서를 Firestore에 기록합니다. 계속할까요?`)) return;
     setBusy(true);
     try {
-      await writeNotes(db, uid, restoreNotes);
+      const expectedVersions = new Map(notes.map((note) => [note.noteId, note.updatedAt]));
+      await writeNotes(db, uid, restoreNotes, expectedVersions);
       setMessage(`${restoreNotes.length}개 노트 복원을 요청했습니다.`);
       setPreview(null);
     } catch (error) {

@@ -25,10 +25,12 @@ public class NoteEditActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable autoSave = this::saveNow;
+    private final EditRevisionTracker revisions = new EditRevisionTracker();
     private long noteId;
     private NoteEntity note;
     private boolean loading = true;
     private boolean deleting;
+    private boolean saving;
     private EditText title;
     private EditText body;
     private Spinner preset;
@@ -47,17 +49,17 @@ public class NoteEditActivity extends Activity {
         preset.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ColorPresets.names()));
         findViewById(R.id.button_add_check_item).setOnClickListener(v -> {
             addChecklistRow("", false);
-            scheduleSave();
+            markChanged();
         });
         findViewById(R.id.button_delete_note).setOnClickListener(v -> confirmDelete());
-        TextWatcher watcher = new SimpleWatcher(this::scheduleSave);
+        TextWatcher watcher = new SimpleWatcher(this::markChanged);
         title.addTextChangedListener(watcher);
         body.addTextChangedListener(watcher);
         title.addTextChangedListener(new TypographyWatcher(title, true));
         body.addTextChangedListener(new TypographyWatcher(body, false));
         NoteTypography.applyTitle(this, title, title.getText());
         NoteTypography.applyBody(this, body, body.getText());
-        preset.setOnItemSelectedListener(new SimpleItemSelectedListener(this::scheduleSave));
+        preset.setOnItemSelectedListener(new SimpleItemSelectedListener(this::presetChanged));
         noteId = getIntent().getLongExtra(EXTRA_NOTE_ID, 0);
         if (noteId == 0) createNote(); else loadNote();
     }
@@ -99,8 +101,9 @@ public class NoteEditActivity extends Activity {
         checklist.removeAllViews();
         for (ChecklistItemEntity item : items) addChecklistRow(item.text, item.checked);
         loading = false;
+        revisions.reset(captureDraft().contentKey);
         setEditorEnabled(true);
-        status.setText("자동 저장 켜짐");
+        status.setText("저장됨");
         title.requestFocus();
     }
 
@@ -118,31 +121,83 @@ public class NoteEditActivity extends Activity {
         box.setChecked(checked);
         field.setText(text);
         NoteTypography.applyBody(this, field, text);
-        box.setOnCheckedChangeListener((button, value) -> scheduleSave());
-        field.addTextChangedListener(new SimpleWatcher(this::scheduleSave));
+        box.setOnCheckedChangeListener((button, value) -> markChanged());
+        field.addTextChangedListener(new SimpleWatcher(this::markChanged));
         field.addTextChangedListener(new TypographyWatcher(field, false));
         row.findViewById(R.id.button_remove_check_item).setOnClickListener(v -> {
             checklist.removeView(row);
-            scheduleSave();
+            markChanged();
         });
         checklist.addView(row);
         if (text.isEmpty()) field.requestFocus();
     }
 
-    private void scheduleSave() {
+    private void markChanged() {
         if (loading || deleting || note == null) return;
+        revisions.changed();
         status.setText("저장 중…");
         handler.removeCallbacks(autoSave);
         handler.postDelayed(autoSave, AUTO_SAVE_DELAY_MS);
     }
 
+    private void presetChanged() {
+        if (loading || note == null) return;
+        String selected = ColorPresets.ALL.get(preset.getSelectedItemPosition()).name;
+        if (!selected.equals(note.colorPreset)) markChanged();
+    }
+
     private void saveNow() {
-        if (loading || deleting || note == null) return;
+        if (loading || deleting || note == null || saving) return;
         handler.removeCallbacks(autoSave);
-        final String nextTitle = title.getText().toString();
-        final String nextBody = body.getText().toString();
-        final String nextPreset = ColorPresets.ALL.get(preset.getSelectedItemPosition()).name;
-        final List<ChecklistItemEntity> items = new ArrayList<>();
+        DraftValues draft = captureDraft();
+        EditRevisionTracker.Attempt attempt = revisions.begin(draft.contentKey);
+        if (attempt == null) {
+            status.setText("저장됨");
+            return;
+        }
+        saving = true;
+        NoteEntity toSave = copyNote(note);
+        toSave.title = draft.title;
+        toSave.body = draft.body;
+        toSave.colorPreset = draft.preset;
+        toSave.updatedAt = Math.max(System.currentTimeMillis(), note.updatedAt + 1L);
+        FirestoreSyncManager.prepareLocalEdit(this, toSave);
+        AppDatabase.IO.execute(() -> {
+            try {
+                NoteDao dao = AppDatabase.get(this).noteDao();
+                dao.updateNote(toSave);
+                dao.replaceItems(noteId, draft.items);
+                FirestoreSyncManager.kick(this);
+                NoteWidgetProvider.notifyAllWidgets(this);
+                runOnUiThread(() -> {
+                    note = toSave;
+                    revisions.complete(attempt);
+                    saving = false;
+                    if (revisions.isDirty()) {
+                        status.setText("저장 중…");
+                        handler.postDelayed(autoSave, AUTO_SAVE_DELAY_MS);
+                    } else {
+                        status.setText("저장됨");
+                    }
+                });
+            } catch (RuntimeException error) {
+                runOnUiThread(() -> {
+                    saving = false;
+                    status.setText("저장 실패 · 다시 시도");
+                });
+            }
+        });
+    }
+
+    private DraftValues captureDraft() {
+        String nextTitle = title.getText().toString();
+        String nextBody = body.getText().toString();
+        String nextPreset = ColorPresets.ALL.get(preset.getSelectedItemPosition()).name;
+        List<ChecklistItemEntity> items = new ArrayList<>();
+        StringBuilder content = new StringBuilder();
+        appendContent(content, nextTitle);
+        appendContent(content, nextBody);
+        appendContent(content, nextPreset);
         for (int i = 0; i < checklist.getChildCount(); i++) {
             View row = checklist.getChildAt(i);
             String text = ((EditText) row.findViewById(R.id.check_item_text)).getText().toString().trim();
@@ -153,20 +208,29 @@ public class NoteEditActivity extends Activity {
             item.checked = ((CheckBox) row.findViewById(R.id.check_item_box)).isChecked();
             item.position = items.size();
             items.add(item);
+            appendContent(content, item.text);
+            content.append(item.checked ? '1' : '0').append(';');
         }
-        note.title = nextTitle;
-        note.body = nextBody;
-        note.colorPreset = nextPreset;
-        note.updatedAt = System.currentTimeMillis();
-        FirestoreSyncManager.prepareLocalEdit(this, note);
-        AppDatabase.IO.execute(() -> {
-            NoteDao dao = AppDatabase.get(this).noteDao();
-            dao.updateNote(note);
-            dao.replaceItems(noteId, items);
-            FirestoreSyncManager.kick(this);
-            NoteWidgetProvider.notifyAllWidgets(this);
-            runOnUiThread(() -> status.setText("저장됨"));
-        });
+        return new DraftValues(nextTitle, nextBody, nextPreset, items, content.toString());
+    }
+
+    private static void appendContent(StringBuilder target, String value) {
+        target.append(value.length()).append(':').append(value).append(';');
+    }
+
+    private static NoteEntity copyNote(NoteEntity source) {
+        NoteEntity copy = new NoteEntity();
+        copy.id = source.id;
+        copy.title = source.title;
+        copy.body = source.body;
+        copy.createdAt = source.createdAt;
+        copy.updatedAt = source.updatedAt;
+        copy.colorPreset = source.colorPreset;
+        copy.cloudId = source.cloudId;
+        copy.ownerUid = source.ownerUid;
+        copy.syncPending = source.syncPending;
+        copy.lastSyncedUpdatedAt = source.lastSyncedUpdatedAt;
+        return copy;
     }
 
     private void confirmDelete() {
@@ -189,8 +253,24 @@ public class NoteEditActivity extends Activity {
 
     @Override
     protected void onPause() {
-        saveNow();
+        if (revisions.isDirty()) saveNow();
         super.onPause();
+    }
+
+    private static final class DraftValues {
+        final String title;
+        final String body;
+        final String preset;
+        final List<ChecklistItemEntity> items;
+        final String contentKey;
+
+        DraftValues(String title, String body, String preset, List<ChecklistItemEntity> items, String contentKey) {
+            this.title = title;
+            this.body = body;
+            this.preset = preset;
+            this.items = items;
+            this.contentKey = contentKey;
+        }
     }
 
     private static final class SimpleWatcher implements TextWatcher {

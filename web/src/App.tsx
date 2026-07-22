@@ -6,8 +6,10 @@ import { ChecklistEditor } from "./components/ChecklistEditor";
 import { useAuth } from "./hooks/useAuth";
 import { usePwa } from "./hooks/usePwa";
 import { createDebouncedTask, type DebouncedTask } from "./lib/debounce";
+import { initialNoteSelection } from "./lib/editorSelection";
 import { decideRemoteUpdate } from "./lib/conflict";
 import { deferDelete, type DeferredDelete } from "./lib/deferredDelete";
+import { createStoredDraft, decideDraftRestore, parseStoredDraft, type StoredDraft } from "./lib/storedDraft";
 import { bodyFontClass, titleFontClass } from "./lib/typography";
 import {
   firebaseErrorMessage,
@@ -19,6 +21,7 @@ import {
 } from "./lib/firebase";
 import {
   firebaseDebugCounter,
+  NoteWriteConflictError,
   removeNote,
   subscribeToNotes,
   writeNote,
@@ -41,7 +44,7 @@ import "./styles/app.css";
 const CACHE_MODE_KEY = "black-walnut-cache-mode";
 const LAST_NOTE_KEY = "black-walnut-last-note";
 
-type SaveStatus = "저장 중" | "동기화됨" | "오프라인" | "오프라인 변경 보관됨" | "연결 복구 중" | "동기화 오류";
+type SaveStatus = "저장 중" | "동기화됨" | "오프라인" | "오프라인 변경 보관됨" | "연결 복구 중" | "동기화 충돌" | "동기화 오류";
 
 interface ConflictState {
   remote: Note | null;
@@ -50,6 +53,22 @@ interface ConflictState {
 
 function draftKey(uid: string, noteId: string) {
   return `black-walnut-draft:${uid}:${noteId}`;
+}
+
+function loadStoredDrafts(uid: string): StoredDraft[] {
+  const prefix = `black-walnut-draft:${uid}:`;
+  const drafts: StoredDraft[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(prefix)) continue;
+    const parsed = parseStoredDraft(localStorage.getItem(key), key.slice(prefix.length));
+    if (parsed) drafts.push(parsed);
+  }
+  return drafts.sort((left, right) => right.savedAt - left.savedAt);
+}
+
+function storeDraft(uid: string, note: Note, baseUpdatedAt: number | null) {
+  localStorage.setItem(draftKey(uid, note.noteId), JSON.stringify(createStoredDraft(note, baseUpdatedAt)));
 }
 
 function ConfigScreen() {
@@ -126,8 +145,9 @@ function NotesApp({ auth, user, cacheMode }: { auth: Auth; user: User; cacheMode
 
 function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User; db: Firestore; cacheMode: CacheMode }) {
   const [notes, setNotes] = useState<RemoteNote[]>([]);
+  const [localDrafts, setLocalDrafts] = useState<StoredDraft[]>(() => loadStoredDrafts(user.uid));
   const [loaded, setLoaded] = useState(false);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(() => initialNoteSelection(localStorage.getItem(LAST_NOTE_KEY), []));
   const [draft, setDraft] = useState<Note | null>(null);
   const [status, setStatus] = useState<SaveStatus>(navigator.onLine ? "연결 복구 중" : "오프라인");
   const [syncError, setSyncError] = useState("");
@@ -144,42 +164,58 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
   const selectedRef = useRef(selectedId);
   const draftRef = useRef<Note | null>(draft);
   const lastRemoteRef = useRef<Note | null>(null);
-  const baseUpdatedAtRef = useRef(0);
+  const baseUpdatedAtRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
-  const lastWrittenRef = useRef(0);
+  const draftRevisionRef = useRef(0);
+  const saveRunningRef = useRef(false);
+  const lastWrittenRef = useRef<Note | null>(null);
   const conflictRef = useRef<ConflictState | null>(null);
   const saveNowRef = useRef<() => Promise<void>>(async () => undefined);
   const debouncedRef = useRef<DebouncedTask | null>(null);
   const deletionRef = useRef<DeferredDelete | null>(null);
   if (!debouncedRef.current) debouncedRef.current = createDebouncedTask(() => saveNowRef.current(), 500);
 
+  const refreshLocalDrafts = useCallback(() => setLocalDrafts(loadStoredDrafts(user.uid)), [user.uid]);
+
   const applyRemote = useCallback((note: Note, restoreDraft = false) => {
     let next = note;
     let dirty = false;
+    let restoredBase: number | null = note.updatedAt;
+    let restoredConflict: ConflictState | null = null;
     if (restoreDraft) {
-      try {
-        const stored = localStorage.getItem(draftKey(user.uid, note.noteId));
-        if (stored) {
-          const parsed = JSON.parse(stored) as Note;
-          if (parsed.noteId === note.noteId && !sameContent(parsed, note)) {
-            next = parsed;
-            dirty = true;
-          }
-        }
-      } catch { localStorage.removeItem(draftKey(user.uid, note.noteId)); }
+      const stored = parseStoredDraft(localStorage.getItem(draftKey(user.uid, note.noteId)), note.noteId);
+      const decision = decideDraftRestore(note, stored);
+      if (decision.kind === "restore") {
+        next = decision.draft.note;
+        dirty = decision.dirty;
+        restoredBase = decision.draft.baseUpdatedAt;
+      } else if (decision.kind === "conflict") {
+        next = decision.draft.note;
+        dirty = true;
+        restoredBase = decision.draft.baseUpdatedAt;
+        restoredConflict = { remote: note, deleted: false };
+      }
     }
     draftRef.current = next;
     setDraft(next);
     lastRemoteRef.current = note;
-    baseUpdatedAtRef.current = note.updatedAt;
+    baseUpdatedAtRef.current = restoredBase;
     dirtyRef.current = dirty;
-    lastWrittenRef.current = 0;
-    conflictRef.current = null;
-    setConflict(null);
+    draftRevisionRef.current = dirty ? 1 : 0;
+    lastWrittenRef.current = null;
+    conflictRef.current = restoredConflict;
+    setConflict(restoredConflict);
     setSizeMessage("");
-    setStatus(dirty ? "저장 중" : "동기화됨");
-    if (dirty) debouncedRef.current?.schedule();
-  }, [user.uid]);
+    setStatus(restoredConflict ? "동기화 충돌" : dirty ? "저장 중" : "동기화됨");
+    if (restoredConflict) {
+      refreshLocalDrafts();
+    } else if (dirty) {
+      debouncedRef.current?.schedule();
+    } else {
+      localStorage.removeItem(draftKey(user.uid, note.noteId));
+      refreshLocalDrafts();
+    }
+  }, [refreshLocalDrafts, user.uid]);
 
   const clearSelection = useCallback(() => {
     selectedRef.current = "";
@@ -187,6 +223,10 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     draftRef.current = null;
     setDraft(null);
     lastRemoteRef.current = null;
+    lastWrittenRef.current = null;
+    baseUpdatedAtRef.current = null;
+    dirtyRef.current = false;
+    draftRevisionRef.current = 0;
     conflictRef.current = null;
     setConflict(null);
     localStorage.removeItem(LAST_NOTE_KEY);
@@ -200,9 +240,11 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
       setLoaded(true);
       setInvalidCount(snapshot.invalidDocuments.length);
       setSyncError("");
-      if (!navigator.onLine) setStatus(snapshot.hasPendingWrites ? "오프라인 변경 보관됨" : "오프라인");
-      else if (snapshot.hasPendingWrites) setStatus("저장 중");
-      else setStatus(snapshot.fromCache ? "연결 복구 중" : "동기화됨");
+      if (!conflictRef.current) {
+        if (!navigator.onLine) setStatus(snapshot.hasPendingWrites ? "오프라인 변경 보관됨" : "오프라인");
+        else if (snapshot.hasPendingWrites) setStatus("저장 중");
+        else setStatus(snapshot.fromCache ? "연결 복구 중" : "동기화됨");
+      }
 
       const currentId = selectedRef.current;
       if (!currentId) return;
@@ -212,6 +254,7 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
           const nextConflict = { remote: null, deleted: true };
           conflictRef.current = nextConflict;
           setConflict(nextConflict);
+          setStatus("동기화 충돌");
         }
         else if (lastRemoteRef.current) clearSelection();
         return;
@@ -220,16 +263,24 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
         applyRemote(remoteEntry.note);
         return;
       }
+      if (dirtyRef.current && !remoteEntry.hasPendingWrites && lastWrittenRef.current && sameContent(lastWrittenRef.current, remoteEntry.note)) {
+        lastRemoteRef.current = remoteEntry.note;
+        baseUpdatedAtRef.current = remoteEntry.note.updatedAt;
+        lastWrittenRef.current = null;
+        setStatus("저장 중");
+        debouncedRef.current?.schedule();
+        return;
+      }
       const decision = decideRemoteUpdate({
         baseUpdatedAt: baseUpdatedAtRef.current,
         localDirty: dirtyRef.current,
-        lastWrittenUpdatedAt: lastWrittenRef.current,
       }, remoteEntry.note, remoteEntry.hasPendingWrites);
       if (decision === "apply") applyRemote(remoteEntry.note);
       else if (decision === "keep-local") {
         const nextConflict = { remote: remoteEntry.note, deleted: false };
         conflictRef.current = nextConflict;
         setConflict(nextConflict);
+        setStatus("동기화 충돌");
       }
     }, (error) => {
       setSyncError(firebaseErrorMessage(error));
@@ -238,28 +289,26 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     return unsubscribe;
   }, [applyRemote, clearSelection, db, user.uid]);
 
-  useEffect(() => {
-    if (!loaded || selectedRef.current || notes.length === 0) return;
-    const remembered = localStorage.getItem(LAST_NOTE_KEY);
-    const entry = notes.find((item) => item.note.noteId === remembered) ?? notes[0];
-    selectedRef.current = entry.note.noteId;
-    setSelectedId(entry.note.noteId);
-    localStorage.setItem(LAST_NOTE_KEY, entry.note.noteId);
-    applyRemote(entry.note, true);
-  }, [applyRemote, loaded, notes]);
-
   const saveNow = useCallback(async () => {
     const current = draftRef.current;
-    if (!current || !dirtyRef.current) return;
+    if (!current || !dirtyRef.current || saveRunningRef.current) return;
     if (conflictRef.current) return;
     const remote = lastRemoteRef.current;
     if (remote && sameContent(current, remote)) {
       dirtyRef.current = false;
       localStorage.removeItem(draftKey(user.uid, current.noteId));
+      refreshLocalDrafts();
       setStatus("동기화됨");
       return;
     }
-    const nextTime = Math.max(Date.now(), baseUpdatedAtRef.current + 1);
+    if (!navigator.onLine) {
+      storeDraft(user.uid, current, baseUpdatedAtRef.current);
+      refreshLocalDrafts();
+      setStatus("오프라인 변경 보관됨");
+      return;
+    }
+    const baseUpdatedAt = baseUpdatedAtRef.current;
+    const nextTime = Math.max(Date.now(), (baseUpdatedAt ?? 0) + 1);
     const candidate = serializeNote({ ...current, updatedAt: nextTime, createdAt: current.createdAt });
     const size = noteUtf8Size(candidate);
     if (size >= NOTE_BLOCK_BYTES) {
@@ -268,25 +317,54 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
       return;
     }
     setSizeMessage(size >= NOTE_WARN_BYTES ? "노트가 매우 큽니다. 여러 노트로 나누는 것이 좋습니다." : "");
-    lastWrittenRef.current = candidate.updatedAt;
-    baseUpdatedAtRef.current = candidate.updatedAt;
-    dirtyRef.current = false;
-    lastRemoteRef.current = candidate;
-    draftRef.current = candidate;
-    setDraft(candidate);
-    conflictRef.current = null;
-    setConflict(null);
-    localStorage.removeItem(draftKey(user.uid, candidate.noteId));
-    setStatus(navigator.onLine ? "저장 중" : "오프라인 변경 보관됨");
-    void writeNote(db, user.uid, candidate).then(() => {
-      if (lastWrittenRef.current === candidate.updatedAt) setStatus("동기화됨");
-    }).catch((error) => {
+    const savingRevision = draftRevisionRef.current;
+    saveRunningRef.current = true;
+    lastWrittenRef.current = candidate;
+    setStatus("저장 중");
+    try {
+      const committed = await writeNote(db, user.uid, candidate, baseUpdatedAt);
+      lastRemoteRef.current = committed;
+      baseUpdatedAtRef.current = committed.updatedAt;
+      lastWrittenRef.current = null;
+      conflictRef.current = null;
+      setConflict(null);
+      const latest = draftRef.current;
+      if (latest && latest.noteId === candidate.noteId && sameContent(latest, candidate)
+          && (!dirtyRef.current || draftRevisionRef.current === savingRevision)) {
+        draftRef.current = committed;
+        setDraft(committed);
+        dirtyRef.current = false;
+        localStorage.removeItem(draftKey(user.uid, candidate.noteId));
+        refreshLocalDrafts();
+        setStatus("동기화됨");
+      } else if (latest && latest.noteId === candidate.noteId) {
+        dirtyRef.current = true;
+        storeDraft(user.uid, latest, baseUpdatedAtRef.current);
+        refreshLocalDrafts();
+      }
+    } catch (error) {
+      lastWrittenRef.current = null;
       dirtyRef.current = true;
-      localStorage.setItem(draftKey(user.uid, candidate.noteId), JSON.stringify(candidate));
-      setSyncError(firebaseErrorMessage(error));
-      setStatus("동기화 오류");
-    });
-  }, [db, user.uid]);
+      const latest = draftRef.current ?? candidate;
+      storeDraft(user.uid, latest, baseUpdatedAtRef.current);
+      refreshLocalDrafts();
+      if (error instanceof NoteWriteConflictError) {
+        const nextConflict = { remote: error.remote, deleted: error.remote === null };
+        conflictRef.current = nextConflict;
+        setConflict(nextConflict);
+        setSyncError("");
+        setStatus("동기화 충돌");
+      } else {
+        setSyncError(firebaseErrorMessage(error));
+        setStatus("동기화 오류");
+      }
+    } finally {
+      saveRunningRef.current = false;
+      if (dirtyRef.current && !conflictRef.current && navigator.onLine && draftRevisionRef.current > savingRevision) {
+        debouncedRef.current?.schedule();
+      }
+    }
+  }, [db, refreshLocalDrafts, user.uid]);
   saveNowRef.current = saveNow;
 
   const editDraft = useCallback((change: (current: Note) => Note) => {
@@ -296,17 +374,33 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     draftRef.current = next;
     setDraft(next);
     dirtyRef.current = true;
-    localStorage.setItem(draftKey(user.uid, next.noteId), JSON.stringify(next));
+    draftRevisionRef.current += 1;
+    storeDraft(user.uid, next, baseUpdatedAtRef.current);
+    refreshLocalDrafts();
     setStatus("저장 중");
     debouncedRef.current?.schedule();
-  }, [user.uid]);
+  }, [refreshLocalDrafts, user.uid]);
 
-  const selectNote = useCallback(async (note: Note) => {
+  const selectNote = useCallback(async (note: Note, localOnlyDraft: StoredDraft | null = null) => {
     await debouncedRef.current?.flush();
     selectedRef.current = note.noteId;
     setSelectedId(note.noteId);
     localStorage.setItem(LAST_NOTE_KEY, note.noteId);
-    applyRemote(note, true);
+    if (localOnlyDraft) {
+      draftRef.current = localOnlyDraft.note;
+      setDraft(localOnlyDraft.note);
+      lastRemoteRef.current = null;
+      lastWrittenRef.current = null;
+      baseUpdatedAtRef.current = localOnlyDraft.baseUpdatedAt;
+      dirtyRef.current = true;
+      draftRevisionRef.current = 1;
+      conflictRef.current = null;
+      setConflict(null);
+      setStatus(navigator.onLine ? "저장 중" : "오프라인 변경 보관됨");
+      if (navigator.onLine) debouncedRef.current?.schedule();
+    } else {
+      applyRemote(note, true);
+    }
     setNarrowEditor(true);
   }, [applyRemote]);
 
@@ -317,16 +411,22 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     setSelectedId(note.noteId);
     localStorage.setItem(LAST_NOTE_KEY, note.noteId);
     lastRemoteRef.current = null;
-    baseUpdatedAtRef.current = note.updatedAt;
+    baseUpdatedAtRef.current = null;
     draftRef.current = note;
     setDraft(note);
     dirtyRef.current = true;
+    draftRevisionRef.current = 1;
+    storeDraft(user.uid, note, null);
+    refreshLocalDrafts();
     setNarrowEditor(true);
     await saveNowRef.current();
-  }, []);
+  }, [refreshLocalDrafts, user.uid]);
 
   useEffect(() => {
-    const online = () => setStatus("연결 복구 중");
+    const online = () => {
+      setStatus("연결 복구 중");
+      if (dirtyRef.current && !conflictRef.current) void saveNowRef.current();
+    };
     const offline = () => setStatus(dirtyRef.current ? "오프라인 변경 보관됨" : "오프라인");
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
@@ -360,13 +460,41 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
   const requestDelete = () => {
     if (!draft || !window.confirm("이 노트를 삭제할까요? 10초 동안 실행 취소할 수 있습니다.")) return;
     deletionRef.current?.cancel();
-    setDeletingId(draft.noteId);
+    const deletingNote = draft;
+    const expectedUpdatedAt = baseUpdatedAtRef.current;
+    const wasRemote = lastRemoteRef.current !== null;
+    setDeletingId(deletingNote.noteId);
     deletionRef.current = deferDelete(async () => {
-      const id = draft.noteId;
+      const id = deletingNote.noteId;
       setDeletingId("");
-      if (selectedRef.current === id) clearSelection();
-      try { await removeNote(db, user.uid, id); }
-      catch (error) { setSyncError(firebaseErrorMessage(error)); setStatus("동기화 오류"); }
+      if (!wasRemote && expectedUpdatedAt === null) {
+        localStorage.removeItem(draftKey(user.uid, id));
+        refreshLocalDrafts();
+        if (selectedRef.current === id) clearSelection();
+        return;
+      }
+      if (expectedUpdatedAt === null) {
+        setSyncError("삭제할 원격 버전을 확인할 수 없습니다. 원격 변경을 먼저 불러오세요.");
+        setStatus("동기화 충돌");
+        return;
+      }
+      try {
+        await removeNote(db, user.uid, id, expectedUpdatedAt);
+        localStorage.removeItem(draftKey(user.uid, id));
+        refreshLocalDrafts();
+        if (selectedRef.current === id) clearSelection();
+      } catch (error) {
+        if (error instanceof NoteWriteConflictError) {
+          const nextConflict = { remote: error.remote, deleted: error.remote === null };
+          conflictRef.current = nextConflict;
+          setConflict(nextConflict);
+          setSyncError("");
+          setStatus("동기화 충돌");
+        } else {
+          setSyncError(firebaseErrorMessage(error));
+          setStatus("동기화 오류");
+        }
+      }
     });
   };
 
@@ -376,11 +504,22 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     setDeletingId("");
   };
 
+  const listedNotes = useMemo(() => {
+    const remoteIds = new Set(notes.map(({ note }) => note.noteId));
+    const localOnly = localDrafts
+      .filter((draft) => !remoteIds.has(draft.note.noteId))
+      .map((draft) => ({ note: draft.note, hasPendingWrites: true, localOnlyDraft: draft }));
+    return [
+      ...localOnly,
+      ...notes.map((entry) => ({ ...entry, localOnlyDraft: null })),
+    ].sort((left, right) => right.note.updatedAt - left.note.updatedAt);
+  }, [localDrafts, notes]);
+
   const filteredNotes = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("ko");
-    if (!query) return notes;
-    return notes.filter(({ note }) => [note.title, note.body, ...note.checklist.map((item) => item.text)].some((value) => value.toLocaleLowerCase("ko").includes(query)));
-  }, [notes, search]);
+    if (!query) return listedNotes;
+    return listedNotes.filter(({ note }) => [note.title, note.body, ...note.checklist.map((item) => item.text)].some((value) => value.toLocaleLowerCase("ko").includes(query)));
+  }, [listedNotes, search]);
 
   const backupNotes = useMemo(() => {
     const current = notes.map((entry) => entry.note);
@@ -402,8 +541,8 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
         <div className="notes-list" role="listbox" aria-label="노트 목록">
           {!loaded && <p className="list-message">노트를 불러오는 중…</p>}
           {loaded && filteredNotes.length === 0 && <p className="list-message">{search ? "검색 결과가 없습니다." : "새 노트를 만들어 시작하세요."}</p>}
-          {filteredNotes.map(({ note }) => (
-            <button key={note.noteId} className={`note-list-item ${selectedId === note.noteId ? "selected" : ""}`} onClick={() => void selectNote(note)} role="option" aria-selected={selectedId === note.noteId}>
+          {filteredNotes.map(({ note, localOnlyDraft }) => (
+            <button key={note.noteId} className={`note-list-item ${selectedId === note.noteId ? "selected" : ""}`} onClick={() => void selectNote(note, localOnlyDraft)} role="option" aria-selected={selectedId === note.noteId}>
               <strong className={titleFontClass(note.title.trim() || "제목 없음")}>{note.title.trim() || "제목 없음"}</strong>
               <span className={bodyFontClass(note.body.trim() || note.checklist[0]?.text || "내용 없음")}>{note.body.trim() || note.checklist[0]?.text || "내용 없음"}</span>
               <time>{new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(note.updatedAt)}</time>
@@ -436,10 +575,16 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
                     else clearSelection();
                   }}>원격 변경 불러오기</button>
                   <button className="primary" onClick={() => {
-                    if (conflict.remote) baseUpdatedAtRef.current = Math.max(baseUpdatedAtRef.current, conflict.remote.updatedAt);
+                    baseUpdatedAtRef.current = conflict.remote?.updatedAt ?? null;
+                    lastRemoteRef.current = conflict.remote;
                     dirtyRef.current = true;
+                    draftRevisionRef.current += 1;
                     conflictRef.current = null;
                     setConflict(null);
+                    if (draftRef.current) {
+                      storeDraft(user.uid, draftRef.current, baseUpdatedAtRef.current);
+                      refreshLocalDrafts();
+                    }
                     void saveNowRef.current();
                   }}>내 변경으로 덮어쓰기</button>
                 </div>
