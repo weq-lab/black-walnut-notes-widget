@@ -26,9 +26,24 @@ service cloud.firestore {
         && request.resource.data.schemaVersion == 1;
     }
 
+    function validNoteMeta(noteId) {
+      return request.resource.data.keys().hasOnly([
+          'noteId', 'pinned', 'order', 'updatedAt'
+        ])
+        && request.resource.data.noteId == noteId
+        && request.resource.data.pinned is bool
+        && request.resource.data.order is int
+        && request.resource.data.updatedAt is int;
+    }
+
     match /users/{uid}/notes/{noteId} {
       allow read, delete: if ownsUserPath(uid);
       allow create, update: if ownsUserPath(uid) && validNote(noteId);
+    }
+
+    match /users/{uid}/noteMeta/{noteId} {
+      allow read, delete: if ownsUserPath(uid);
+      allow create, update: if ownsUserPath(uid) && validNoteMeta(noteId);
     }
 
     match /{document=**} {

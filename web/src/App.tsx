@@ -3,7 +3,9 @@ import type { Auth, User } from "firebase/auth";
 import type { Firestore } from "firebase/firestore";
 import { BackupPanel } from "./components/BackupPanel";
 import { ChecklistEditor } from "./components/ChecklistEditor";
+import { NoteList, type NoteListEntry } from "./components/NoteList";
 import { useAuth } from "./hooks/useAuth";
+import { removeNoteOrderMeta, useNoteOrder } from "./hooks/useNoteOrder";
 import { usePwa } from "./hooks/usePwa";
 import { createDebouncedTask, type DebouncedTask } from "./lib/debounce";
 import { initialNoteSelection } from "./lib/editorSelection";
@@ -479,6 +481,7 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
       if (!wasRemote && expectedUpdatedAt === null) {
         localStorage.removeItem(draftKey(user.uid, id));
         refreshLocalDrafts();
+        void removeNoteOrderMeta(db, user.uid, id).catch((error) => setSyncError(firebaseErrorMessage(error)));
         if (selectedRef.current === id) clearSelection();
         return;
       }
@@ -491,6 +494,7 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
         await removeNote(db, user.uid, id, expectedUpdatedAt);
         localStorage.removeItem(draftKey(user.uid, id));
         refreshLocalDrafts();
+        void removeNoteOrderMeta(db, user.uid, id).catch((error) => setSyncError(firebaseErrorMessage(error)));
         if (selectedRef.current === id) clearSelection();
       } catch (error) {
         if (error instanceof NoteWriteConflictError) {
@@ -513,7 +517,7 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     setDeletingId("");
   };
 
-  const listedNotes = useMemo(() => {
+  const listedNotes = useMemo<NoteListEntry[]>(() => {
     const remoteIds = new Set(notes.map(({ note }) => note.noteId));
     const localOnly = localDrafts
       .filter((draft) => !remoteIds.has(draft.note.noteId))
@@ -524,11 +528,17 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
     ].sort((left, right) => right.note.updatedAt - left.note.updatedAt);
   }, [localDrafts, notes]);
 
+  const noteOrder = useNoteOrder(db, user.uid, listedNotes);
+
+  useEffect(() => {
+    if (noteOrder.error) setSyncError(noteOrder.error);
+  }, [noteOrder.error]);
+
   const filteredNotes = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("ko");
-    if (!query) return listedNotes;
-    return listedNotes.filter(({ note }) => [note.title, note.body, ...note.checklist.map((item) => item.text)].some((value) => value.toLocaleLowerCase("ko").includes(query)));
-  }, [listedNotes, search]);
+    if (!query) return noteOrder.orderedEntries;
+    return noteOrder.orderedEntries.filter(({ note }) => [note.title, note.body, ...note.checklist.map((item) => item.text)].some((value) => value.toLocaleLowerCase("ko").includes(query)));
+  }, [noteOrder.orderedEntries, search]);
 
   const backupNotes = useMemo(() => {
     const current = notes.map((entry) => entry.note);
@@ -547,17 +557,16 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
           <button className="primary new-note" onClick={() => void newNote()}>＋ 새 노트</button>
         </header>
         <label className="search-wrap" htmlFor="note-search"><span>⌕</span><input id="note-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="노트와 체크리스트 검색" /></label>
-        <div className="notes-list" role="listbox" aria-label="노트 목록">
-          {!loaded && <p className="list-message">노트를 불러오는 중…</p>}
-          {loaded && filteredNotes.length === 0 && <p className="list-message">{search ? "검색 결과가 없습니다." : "새 노트를 만들어 시작하세요."}</p>}
-          {filteredNotes.map(({ note, localOnlyDraft }) => (
-            <button key={note.noteId} className={`note-list-item ${selectedId === note.noteId ? "selected" : ""}`} onClick={() => void selectNote(note, localOnlyDraft)} role="option" aria-selected={selectedId === note.noteId}>
-              <strong className={titleFontClass(note.title.trim() || "제목 없음")}>{note.title.trim() || "제목 없음"}</strong>
-              <span className={bodyFontClass(note.body.trim() || note.checklist[0]?.text || "내용 없음")}>{note.body.trim() || note.checklist[0]?.text || "내용 없음"}</span>
-              <time>{new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(note.updatedAt)}</time>
-            </button>
-          ))}
-        </div>
+        <NoteList
+          loaded={loaded}
+          search={search}
+          entries={filteredNotes}
+          selectedId={selectedId}
+          isPinned={noteOrder.isPinned}
+          onSelect={(note, localOnlyDraft) => void selectNote(note, localOnlyDraft)}
+          onPin={noteOrder.togglePinned}
+          onMove={noteOrder.moveNote}
+        />
         <footer className="account-bar">
           <div><span className={`status-dot status-${status.replaceAll(" ", "-")}`} /><strong>{status}</strong><small>{user.email ?? "Google 계정"}</small></div>
           <button className="icon-button" onClick={() => setShowSettings(true)} aria-label="백업 및 설정">⚙</button>
@@ -571,6 +580,15 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
             <header className="editor-toolbar">
               <button className="icon-button back-button" onClick={() => setNarrowEditor(false)} aria-label="목록으로 돌아가기">←</button>
               <span className="save-state">{status}</span>
+              <button
+                className={`icon-button pin-toolbar-button ${noteOrder.isPinned(draft.noteId) ? "active" : ""}`}
+                onClick={() => noteOrder.togglePinned(draft.noteId)}
+                aria-label={noteOrder.isPinned(draft.noteId) ? "노트 고정 해제" : "노트 고정"}
+                aria-pressed={noteOrder.isPinned(draft.noteId)}
+                title={noteOrder.isPinned(draft.noteId) ? "고정 해제" : "위에 고정"}
+              >
+                {noteOrder.isPinned(draft.noteId) ? "◆" : "◇"}
+              </button>
               <button className="icon-button" onClick={() => void newNote()} aria-label="새 노트" title="새 노트">＋</button>
               <button className="icon-button" onClick={() => setShowSettings(true)} aria-label="백업 및 설정" title="백업 및 설정">⚙</button>
               {canInstall && <button className="text-button" onClick={() => void install()}>앱 설치</button>}

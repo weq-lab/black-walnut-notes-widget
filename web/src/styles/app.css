@@ -196,3 +196,76 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Note pinning and manual ordering */
+.note-list-row {
+  min-width: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+}
+.note-list-row::before {
+  content: "";
+  width: 2px;
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: transparent;
+}
+.note-list-row:hover { background: #0d0806; }
+.note-list-row.selected { background: #100a07; }
+.note-list-row.selected::before { background: var(--accent-primary); }
+.note-list-row.dragging { opacity: .42; }
+.note-list-row .note-list-item {
+  min-width: 0;
+  min-height: 84px;
+  border: 0;
+  background: transparent;
+  padding-right: 8px;
+}
+.note-list-row .note-list-item::before { display: none; }
+.note-list-row .note-list-item:hover,
+.note-list-row .note-list-item.selected { background: transparent; }
+.note-list-controls {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  place-items: center;
+  padding: 7px 4px;
+}
+.pin-button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  color: #5a3021;
+  background: transparent;
+  font-size: 13px;
+}
+.pin-button:hover,
+.pin-button.active {
+  color: var(--accent-primary);
+  background: #100a07;
+}
+.drag-handle {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: #5a3021;
+  cursor: grab;
+  user-select: none;
+  font-size: 15px;
+  letter-spacing: -4px;
+  padding-right: 4px;
+}
+.drag-handle:active { cursor: grabbing; }
+.drag-handle:hover { color: var(--accent-primary); }
+.drag-handle.disabled {
+  opacity: .3;
+  cursor: not-allowed;
+}
+.pin-toolbar-button { color: #5a3021; }
+.pin-toolbar-button.active {
+  color: var(--note-accent);
+  background: #100a07;
+}
