@@ -173,7 +173,16 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
   const saveNowRef = useRef<() => Promise<void>>(async () => undefined);
   const debouncedRef = useRef<DebouncedTask | null>(null);
   const deletionRef = useRef<DeferredDelete | null>(null);
+  const bodyInputRef = useRef<HTMLTextAreaElement | null>(null);
   if (!debouncedRef.current) debouncedRef.current = createDebouncedTask(() => saveNowRef.current(), 500);
+
+  useEffect(() => {
+    const textarea = bodyInputRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [draft?.body, selectedId]);
 
   const refreshLocalDrafts = useCallback(() => setLocalDrafts(loadStoredDrafts(user.uid)), [user.uid]);
 
@@ -562,6 +571,8 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
             <header className="editor-toolbar">
               <button className="icon-button back-button" onClick={() => setNarrowEditor(false)} aria-label="목록으로 돌아가기">←</button>
               <span className="save-state">{status}</span>
+              <button className="icon-button" onClick={() => void newNote()} aria-label="새 노트" title="새 노트">＋</button>
+              <button className="icon-button" onClick={() => setShowSettings(true)} aria-label="백업 및 설정" title="백업 및 설정">⚙</button>
               {canInstall && <button className="text-button" onClick={() => void install()}>앱 설치</button>}
               <button className="danger-button" onClick={requestDelete}>삭제</button>
             </header>
@@ -592,7 +603,7 @@ function NotesWorkspace({ auth, user, db, cacheMode }: { auth: Auth; user: User;
             )}
             <div className="editor-scroll">
               <input className={`title-input ${titleFontClass(draft.title)}`} value={draft.title} placeholder="제목" onChange={(event) => editDraft((note) => ({ ...note, title: event.target.value }))} />
-              <textarea className={`body-input ${bodyFontClass(draft.body)}`} value={draft.body} placeholder="메모를 입력하세요" onChange={(event) => editDraft((note) => ({ ...note, body: event.target.value }))} />
+              <textarea ref={bodyInputRef} className={`body-input ${bodyFontClass(draft.body)}`} value={draft.body} placeholder="메모를 입력하세요" onChange={(event) => editDraft((note) => ({ ...note, body: event.target.value }))} />
               <ChecklistEditor items={draft.checklist} onChange={(checklist: ChecklistItem[]) => editDraft((note) => ({ ...note, checklist }))} />
               <section className="preset-section">
                 <label htmlFor="color-preset">색상 프리셋</label>

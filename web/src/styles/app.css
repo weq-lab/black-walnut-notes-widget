@@ -82,8 +82,8 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 .choice strong { color: #d1ae6f; font-size: 18px; }
 .choice span { color: #8a624c; line-height: 1.55; }
 
-.app-shell { width: 100%; height: 100%; display: grid; grid-template-columns: minmax(280px, 36%) 1fr; background: #000; }
-.sidebar { min-width: 0; height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--surface); border-right: 1px solid var(--border-subtle); }
+.app-shell { width: 100%; height: 100%; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(280px, 36%) 1fr; background: #000; }
+.sidebar { min-width: 0; min-height: 0; height: 100%; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--surface); border-right: 1px solid var(--border-subtle); }
 .app-header { min-height: 64px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border-subtle); }
 .compact-brand { display: flex; align-items: center; gap: 8px; min-width: 0; color: #8a624c; font-family: var(--font-note-latin); font-size: 15px; font-weight: 600; letter-spacing: .04em; }
 .new-note { height: 38px; padding: 0 13px; white-space: nowrap; }
@@ -114,7 +114,7 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 .icon-button { width: 36px; height: 36px; display: inline-grid; place-items: center; padding: 0; font-size: 18px; }
 .danger-button { color: var(--danger); padding: 8px; }
 
-.editor-pane { min-width: 0; height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr); background: var(--app-bg); color: var(--note-body, var(--body-default)); }
+.editor-pane { min-width: 0; min-height: 0; height: 100%; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr); background: var(--app-bg); color: var(--note-body, var(--body-default)); }
 .editor-pane[data-preset="블랙 월넛"] { --note-title: #5a3021; --note-body: #3a2017; --note-accent: #d1ae6f; }
 .editor-pane[data-preset="다크 브라운"] { --note-title: #6b351c; --note-body: #4a2414; --note-accent: #9a5835; }
 .editor-pane[data-preset="앤티크 브론즈"] { --note-title: #8c5a32; --note-body: #5a351f; --note-accent: #b77a45; }
@@ -128,11 +128,11 @@ code { color: #d1ae6f; overflow-wrap: anywhere; }
 .conflict-banner { padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; color: #d5a26a; background: #1a0d07; border-bottom: 1px solid #5b2e1d; font-size: 13px; }
 .conflict-banner > div { display: flex; gap: 8px; }
 .conflict-banner button { min-height: 34px; padding: 0 10px; }
-.editor-scroll { min-height: 0; overflow-y: auto; padding: clamp(18px, 4vw, 42px); scrollbar-color: #5a3021 transparent; scrollbar-width: thin; }
+.editor-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: clamp(18px, 4vw, 42px); scrollbar-color: #5a3021 transparent; scrollbar-width: thin; }
 .title-input, .body-input { width: 100%; border: 0; outline: 0; background: transparent; resize: none; }
 .title-input { color: var(--note-title); font-size: clamp(25px, 4vw, 38px); line-height: 1.32; padding: 0 0 14px; border-bottom: 1px solid var(--border-subtle); }
 .title-input::placeholder, .body-input::placeholder { color: #29150f; font-family: var(--font-functional); }
-.body-input { min-height: 32vh; margin-top: 18px; color: var(--note-body); font-size: 17.5px; line-height: 1.7; overflow: hidden; field-sizing: content; }
+.body-input { min-height: 65vh; height: auto; margin-top: 18px; color: var(--note-body); font-size: 17.5px; line-height: 1.7; overflow: hidden; resize: none; }
 .checklist-editor { margin-top: 22px; border-top: 1px solid var(--border-subtle); padding-top: 18px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; }
 .section-heading h3, .preset-section label { color: var(--note-title); font-size: 13px; letter-spacing: .06em; font-weight: 700; }
